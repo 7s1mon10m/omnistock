@@ -9,7 +9,10 @@ from app.api.v1 import (
     inventory,
     orders,
     products,
+    purchase,
     shipments,
+    suppliers,
+    transfers,
     users,
     warehouses,
 )
@@ -29,3 +32,6 @@ api_router.include_router(channels.router)
 # before /orders/{order_id} for the same reason.
 api_router.include_router(orders.router)
 api_router.include_router(shipments.router)
+api_router.include_router(suppliers.router)
+api_router.include_router(purchase.router)
+api_router.include_router(transfers.router)
