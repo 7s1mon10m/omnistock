@@ -26,7 +26,10 @@ from app.repositories import (
     inventory_repo,
     order_repo,
     product_repo,
+    purchase_repo,
     shipment_repo,
+    supplier_repo,
+    transfer_repo,
     user_repo,
     warehouse_repo,
 )
@@ -34,6 +37,14 @@ from app.schemas.channel import ChannelCreate, ChannelProductCreate, ShopCreate
 from app.schemas.inventory import InventoryAdjustRequest
 from app.schemas.order import OrderIn, OrderItemIn
 from app.schemas.product import BundleComponentIn, BundleSetRequest, SkuCreate, SpuCreate
+from app.schemas.purchase import (
+    PurchaseOrderCreate,
+    PurchaseOrderItemIn,
+    ReceiptCreate,
+    ReceiptItemIn,
+)
+from app.schemas.supplier import SupplierCreate
+from app.schemas.transfer import TransferCreate, TransferItemIn
 from app.services import (
     auth_service,
     channel_service,
@@ -42,7 +53,10 @@ from app.services import (
     order_import_service,
     permission_service,
     product_service,
+    purchase_service,
     shipment_service,
+    supplier_service,
+    transfer_service,
     warehouse_service,
 )
 
@@ -120,6 +134,30 @@ PICK_LOCATIONS = {
 
 #: 演示用的拣货单来源订单（必须是一笔已占用库存的订单）。
 DEMO_SHIPMENT_ORDER_NO = "TB202610020001"
+
+# --------------------------------------------------------------------- M4 data
+# (code, name, contact, phone, payment terms, lead time days)
+SUPPLIERS = [
+    ("SUP-DEMO-1", "示例日化供应商", "王经理", "13800000001", "月结 30 天", 10),
+    ("SUP-DEMO-2", "示例服饰供应商", "李经理", "13800000002", "货到付款", 7),
+]
+
+# 一张部分到货的采购单：下单 200，首批到 120（含 5 件次品），正好演示质检分流。
+DEMO_PURCHASE = {
+    "supplier_code": "SUP-DEMO-1",
+    "warehouse_code": "WH-MAIN",
+    "items": [("SHAMPOO-500", 200, 1800)],
+    "first_receipt": ("SHAMPOO-500", 120, 5),
+}
+
+# --------------------------------------------------------------------- M5 data
+# (from warehouse, to warehouse, reason, [(sku code, qty)])
+DEMO_TRANSFER = {
+    "from": "WH-MAIN",
+    "to": "WH-LIVE",
+    "reason": "直播备货",
+    "items": [("TSHIRT-WHITE-L", 10), ("SHAMPOO-500", 20)],
+}
 
 # Demo orders so the console is not empty on first run.
 # (channel, shop, order no, [(external code, qty, unit price cents)], buyer)
@@ -397,6 +435,104 @@ def _ensure_demo_shipment(session: Session) -> str | None:
     return shipment.shipment_no
 
 
+def _ensure_suppliers(session: Session) -> dict[str, int]:
+    ids: dict[str, int] = {}
+    for code, name, contact, phone, terms, lead in SUPPLIERS:
+        supplier = supplier_repo.get_by_code(session, code)
+        if supplier is None:
+            supplier = supplier_service.create(
+                session,
+                SupplierCreate(
+                    code=code,
+                    name=name,
+                    contact_name=contact,
+                    contact_phone=phone,
+                    payment_terms=terms,
+                    lead_time_days=lead,
+                ),
+            )
+        ids[code] = supplier.id
+    return ids
+
+
+def _ensure_demo_purchase(session: Session, sku_ids: dict[str, int], warehouse_ids: dict[str, int]) -> str | None:
+    """一张部分到货的采购单，用来演示分批到货与次品分流。"""
+    supplier_id = supplier_repo.get_by_code(session, DEMO_PURCHASE["supplier_code"])
+    if supplier_id is None:
+        return None
+
+    orders = purchase_repo.list_orders(session, page_size=200)
+    for order in orders.items:
+        if order.supplier_id == supplier_id.id and order.items:
+            return order.po_no
+
+    payload_items = []
+    for sku_code, quantity, price in DEMO_PURCHASE["items"]:
+        sku_id = sku_ids.get(sku_code)
+        if sku_id is None:
+            return None
+        payload_items.append(
+            PurchaseOrderItemIn(sku_id=sku_id, quantity=quantity, unit_price_cents=price)
+        )
+
+    order = purchase_service.create_order(
+        session,
+        PurchaseOrderCreate(
+            supplier_id=supplier_id.id,
+            warehouse_id=warehouse_ids[DEMO_PURCHASE["warehouse_code"]],
+            remark="演示采购单",
+            items=payload_items,
+        ),
+    )
+    purchase_service.submit_order(session, order)
+
+    sku_code, quantity, defective = DEMO_PURCHASE["first_receipt"]
+    first_item = next(
+        (row for row in order.items if row.sku_id == sku_ids.get(sku_code)), None
+    )
+    if first_item is not None:
+        purchase_service.create_receipt(
+            session,
+            order,
+            ReceiptCreate(
+                items=[
+                    ReceiptItemIn(
+                        order_item_id=first_item.id,
+                        quantity=quantity,
+                        defective_qty=defective,
+                    )
+                ]
+            ),
+        )
+    return order.po_no
+
+
+def _ensure_demo_transfer(session: Session, sku_ids: dict[str, int], warehouse_ids: dict[str, int]) -> str | None:
+    """一张待审批的调拨单，把「申请 → 审批 → 发出 → 收货」留给人去点。"""
+    existing = transfer_repo.list_transfers(session, page_size=200)
+    for transfer in existing.items:
+        if transfer.reason == DEMO_TRANSFER["reason"]:
+            return transfer.transfer_no
+
+    items = []
+    for sku_code, quantity in DEMO_TRANSFER["items"]:
+        sku_id = sku_ids.get(sku_code)
+        if sku_id is None:
+            return None
+        items.append(TransferItemIn(sku_id=sku_id, quantity=quantity))
+
+    transfer = transfer_service.create_transfer(
+        session,
+        TransferCreate(
+            from_warehouse_id=warehouse_ids[DEMO_TRANSFER["from"]],
+            to_warehouse_id=warehouse_ids[DEMO_TRANSFER["to"]],
+            reason=DEMO_TRANSFER["reason"],
+            items=items,
+        ),
+    )
+    return transfer.transfer_no
+
+
 def main() -> None:
     init_db()
     session = SessionLocal()
@@ -414,12 +550,16 @@ def main() -> None:
         order_stats = _ensure_demo_orders(session)
         location_count = _assign_pick_locations(session, sku_ids, warehouse_ids)
         shipment_no = _ensure_demo_shipment(session)
+        _ensure_suppliers(session)
+        po_no = _ensure_demo_purchase(session, sku_ids, warehouse_ids)
+        transfer_no = _ensure_demo_transfer(session, sku_ids, warehouse_ids)
 
         print("种子数据已写入：")
         print(
             f"  仓库 {len(WAREHOUSES)} 个 · SPU {len(SPUS)} 个 · SKU {len(sku_ids)} 个 · "
             f"渠道 {len(CHANNELS)} 个 · 渠道商品映射 {mapping_count} 条"
         )
+        print(f"  供应商 {len(SUPPLIERS)} 家")
         print(f"  已分配拣货库位 {location_count} 个 SKU（总仓）")
         if order_stats:
             print(
@@ -428,6 +568,10 @@ def main() -> None:
             )
         if shipment_no:
             print(f"  演示拣货单 {shipment_no}（状态：待拣货）")
+        if po_no:
+            print(f"  演示采购单 {po_no}（状态：部分到货，首批含 5 件次品）")
+        if transfer_no:
+            print(f"  演示调拨单 {transfer_no}（状态：待审批）")
         print(f"  数据库 {settings.DATABASE_URL}")
         print("  演示账号（仅本地使用）：")
         for username, password, role, _name in DEMO_USERS:
