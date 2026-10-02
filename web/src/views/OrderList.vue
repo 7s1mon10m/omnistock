@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { describeError } from '@/api/client'
 import * as channelApi from '@/api/channel'
 import * as orderApi from '@/api/order'
+import * as shipmentApi from '@/api/shipment'
 import { useAuthStore } from '@/stores/auth'
 import {
   ORDER_STATUS_LABELS,
@@ -88,6 +89,24 @@ async function act(row: OrderSummary, action: 'pay' | 'cancel' | 'retry') {
   }
 }
 
+async function openShipment(row: OrderSummary) {
+  try {
+    const shipment = await shipmentApi.createShipment(row.id)
+    ElMessage.success(`已生成拣货单 ${shipment.shipment_no}`)
+    router.push({ name: 'shipment-detail', params: { id: shipment.id } })
+  } catch (err) {
+    // 已有进行中的发货单时直接带用户过去，而不是只报个错
+    const detail = (err as { response?: { data?: { detail?: { shipment_id?: number } } } })
+      .response?.data?.detail
+    if (detail?.shipment_id) {
+      ElMessage.info('该订单已有进行中的拣货单，已为你打开')
+      router.push({ name: 'shipment-detail', params: { id: detail.shipment_id } })
+      return
+    }
+    ElMessage.error(describeError(err))
+  }
+}
+
 onMounted(async () => {
   await loadChannels()
   await load()
@@ -167,10 +186,26 @@ onMounted(async () => {
           {{ row.source === 'import_csv' ? 'CSV 导入' : row.source === 'import_json' ? 'JSON 导入' : row.source }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="210" fixed="right">
+      <el-table-column label="操作" width="270" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openDetail(row)">详情</el-button>
           <template v-if="auth.canManageProducts()">
+            <el-button
+              v-if="row.status === 'reserved'"
+              link
+              type="success"
+              @click="openShipment(row)"
+            >
+              开拣货单
+            </el-button>
+            <el-button
+              v-if="row.status === 'picking'"
+              link
+              type="success"
+              @click="openShipment(row)"
+            >
+              去拣货
+            </el-button>
             <el-button
               v-if="row.status === 'pending_payment'"
               link

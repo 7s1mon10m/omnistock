@@ -15,6 +15,7 @@ const MENU_PREFIXES = [
   '/channel-products',
   '/channels',
   '/orders',
+  '/shipments',
   '/skus',
   '/products',
   '/inventory',
@@ -58,6 +59,7 @@ async function onLogout() {
           <el-menu-item index="/orders">订单管理</el-menu-item>
           <el-menu-item index="/order-import">订单导入</el-menu-item>
           <el-menu-item index="/order-exceptions">异常订单</el-menu-item>
+          <el-menu-item index="/shipments">拣货发货</el-menu-item>
           <el-menu-item index="/products">商品管理</el-menu-item>
           <el-menu-item index="/inventory">库存总览</el-menu-item>
           <el-menu-item index="/bundles">组合商品</el-menu-item>
@@ -68,7 +70,7 @@ async function onLogout() {
             <el-menu-item index="/channel-products">渠道商品映射</el-menu-item>
           </el-sub-menu>
         </el-menu>
-        <div class="milestone">M2 · 电商订单处理</div>
+        <div class="milestone">M3 · 仓库发货</div>
       </el-aside>
       <el-main>
         <slot />

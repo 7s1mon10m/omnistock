@@ -139,6 +139,9 @@ export interface InventoryStock {
   defective_qty: number
   repair_qty: number
   available_qty: number
+  /** 默认拣货库位（M3）：拣货清单按它排序 */
+  default_location_id: number | null
+  default_location_code: string
   version: number
   updated_at: string | null
 }
@@ -411,6 +414,134 @@ export const SYNC_RESULT_LABELS: Record<string, string> = {
   created: '已创建',
   duplicate: '重复同步',
   failed: '失败',
+}
+
+// ------------------------------------------------------ shipping & picking
+export type ShipmentStatus =
+  | 'pending'
+  | 'picking'
+  | 'picked'
+  | 'packed'
+  | 'shipped'
+  | 'cancelled'
+
+export const SHIPMENT_STATUS_LABELS: Record<ShipmentStatus, string> = {
+  pending: '待拣货',
+  picking: '拣货中',
+  picked: '拣货完成',
+  packed: '已复核打包',
+  shipped: '已出库',
+  cancelled: '已取消',
+}
+
+export const SHIPMENT_STATUS_TAG: Record<ShipmentStatus, string> = {
+  pending: 'info',
+  picking: 'warning',
+  picked: 'primary',
+  packed: 'success',
+  shipped: 'success',
+  cancelled: 'info',
+}
+
+export interface ShipmentItem {
+  id: number
+  line_no: number
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  barcode: string
+  location_id: number | null
+  location_code: string
+  location_name: string
+  quantity: number
+  picked_qty: number
+  status: 'pending' | 'picked'
+  is_bundle_component: boolean
+  remark: string
+}
+
+export interface ShipmentListItem {
+  id: number
+  shipment_no: string
+  order_no: string
+  channel_code: string
+  channel_order_no: string
+  buyer_nick: string
+  warehouse_code: string
+  status: ShipmentStatus
+  picker_name: string
+  total_quantity: number
+  picked_quantity: number
+  carrier: string
+  tracking_no: string
+  created_at: string | null
+}
+
+export interface Shipment extends ShipmentListItem {
+  order_id: number
+  warehouse_id: number
+  warehouse_name: string
+  picker_id: number | null
+  picked_at: string | null
+  packed_by: number | null
+  packed_by_name: string
+  packed_at: string | null
+  package_count: number
+  weight_g: number
+  shipped_at: string | null
+  remark: string
+  is_fully_picked: boolean
+  items: ShipmentItem[]
+}
+
+export type PickResultType =
+  | 'ok'
+  | 'wrong_sku'
+  | 'barcode_not_found'
+  | 'over_quantity'
+  | 'not_on_list'
+
+export interface PickResult {
+  accepted: boolean
+  result: PickResultType
+  message: string
+  shipment_id: number
+  shipment_item_id: number | null
+  sku_id: number | null
+  sku_code: string
+  picked_qty: number
+  quantity: number
+  shipment_status: ShipmentStatus
+  progress: string
+}
+
+export interface PickRecord {
+  id: number
+  shipment_id: number
+  shipment_item_id: number | null
+  barcode: string
+  quantity: number
+  result: PickResultType
+  accepted: boolean
+  message: string
+  sku_id: number | null
+  sku_code: string
+  operator_id: number | null
+  operator_name: string
+  created_at: string | null
+}
+
+export interface OutboundLine {
+  sku_id: number
+  sku_code: string
+  warehouse_code: string
+  quantity: number
+}
+
+export interface ShipmentActionResult {
+  shipment: Shipment
+  message: string
+  outbound: OutboundLine[]
 }
 
 export function yuan(cents: number): string {

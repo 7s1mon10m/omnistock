@@ -33,6 +33,17 @@ const router = createRouter({
       component: () => import('@/views/OrderExceptions.vue'),
     },
     {
+      path: '/shipments',
+      name: 'shipments',
+      component: () => import('@/views/ShipmentList.vue'),
+    },
+    {
+      path: '/shipments/:id',
+      name: 'shipment-detail',
+      component: () => import('@/views/ShipmentDetail.vue'),
+      props: true,
+    },
+    {
       path: '/channels',
       name: 'channels',
       component: () => import('@/views/ChannelConfig.vue'),

@@ -82,3 +82,17 @@ export async function reserveBundle(payload: {
   const { data } = await http.post<InventoryTransaction[]>('/inventory/reserve-bundle', payload)
   return data
 }
+
+/** 设置该 SKU 在该仓库的默认拣货库位（拣货单按它排序）。 */
+export async function setStockLocation(
+  skuId: number,
+  warehouseId: number,
+  locationId: number | null,
+): Promise<InventoryStock> {
+  const { data } = await http.patch<InventoryStock>('/inventory/location', {
+    sku_id: skuId,
+    warehouse_id: warehouseId,
+    location_id: locationId,
+  })
+  return data
+}

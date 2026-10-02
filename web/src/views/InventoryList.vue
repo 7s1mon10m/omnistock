@@ -7,7 +7,7 @@ import * as inventoryApi from '@/api/inventory'
 import * as warehouseApi from '@/api/warehouse'
 import { useAuthStore } from '@/stores/auth'
 import InventoryLedgerTable from '@/components/InventoryLedgerTable.vue'
-import type { InventoryStock, InventoryTransaction, Warehouse } from '@/types'
+import type { InventoryStock, InventoryTransaction, Warehouse, WarehouseLocation } from '@/types'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -38,6 +38,48 @@ const adjustForm = reactive({
   quantity: 1,
   reason: '',
 })
+
+// 默认拣货库位（M3）：拣货单按它排序
+const locationVisible = ref(false)
+const locationForm = reactive({
+  sku_id: 0,
+  warehouse_id: 0,
+  location_id: undefined as number | undefined,
+  label: '',
+})
+const locationOptions = ref<WarehouseLocation[]>([])
+
+async function loadLocations(warehouseId: number) {
+  try {
+    locationOptions.value = await warehouseApi.listLocations(warehouseId)
+  } catch {
+    locationOptions.value = []
+  }
+}
+
+async function openLocation(row: InventoryStock) {
+  locationForm.sku_id = row.sku_id
+  locationForm.warehouse_id = row.warehouse_id
+  locationForm.location_id = row.default_location_id ?? undefined
+  locationForm.label = `${row.sku_code} @ ${row.warehouse_name}`
+  await loadLocations(row.warehouse_id)
+  locationVisible.value = true
+}
+
+async function submitLocation() {
+  try {
+    await inventoryApi.setStockLocation(
+      locationForm.sku_id,
+      locationForm.warehouse_id,
+      locationForm.location_id ?? null,
+    )
+    ElMessage.success('拣货库位已更新')
+    locationVisible.value = false
+    await load()
+  } catch (err) {
+    ElMessage.error(describeError(err))
+  }
+}
 
 async function load() {
   loading.value = true
@@ -160,6 +202,14 @@ onMounted(async () => {
       <el-table-column prop="sku_code" label="SKU 编码" width="180" />
       <el-table-column prop="sku_name" label="商品" min-width="170" />
       <el-table-column prop="warehouse_name" label="仓库" width="120" />
+      <el-table-column label="拣货库位" width="120">
+        <template #default="{ row }">
+          <el-tag v-if="row.default_location_code" size="small" type="warning">
+            {{ row.default_location_code }}
+          </el-tag>
+          <span v-else class="muted">未分配</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="on_hand_qty" label="实际" width="80" align="right" />
       <el-table-column prop="reserved_qty" label="已占用" width="85" align="right" />
       <el-table-column prop="safety_qty" label="安全" width="75" align="right" />
@@ -170,7 +220,7 @@ onMounted(async () => {
           <strong :class="{ warn: row.available_qty <= 0 }">{{ row.available_qty }}</strong>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openLedger(row)">流水</el-button>
           <el-button link type="primary" @click="router.push({ name: 'sku-detail', params: { id: row.sku_id } })">
@@ -178,6 +228,14 @@ onMounted(async () => {
           </el-button>
           <el-button v-if="auth.canAdjustStock()" link type="primary" @click="openAdjust(row)">
             调整
+          </el-button>
+          <el-button
+            v-if="auth.hasRole('admin', 'owner', 'warehouse')"
+            link
+            type="primary"
+            @click="openLocation(row)"
+          >
+            库位
           </el-button>
         </template>
       </el-table-column>
@@ -200,6 +258,40 @@ onMounted(async () => {
     <el-drawer v-model="drawerVisible" :title="`库存流水 · ${ledgerTitle}`" size="70%">
       <InventoryLedgerTable :rows="ledgerRows" :loading="ledgerLoading" :show-sku="false" />
     </el-drawer>
+
+    <el-dialog v-model="locationVisible" title="设置默认拣货库位" width="460px">
+      <el-alert
+        title="拣货清单按库位编码排序。给每个 SKU 维护库位，拣货员就不用走回头路。"
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 12px"
+      />
+      <el-form label-width="90px">
+        <el-form-item label="库存行">
+          <span>{{ locationForm.label }}</span>
+        </el-form-item>
+        <el-form-item label="拣货库位">
+          <el-select
+            v-model="locationForm.location_id"
+            clearable
+            placeholder="未分配"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="loc in locationOptions"
+              :key="loc.id"
+              :label="`${loc.code}${loc.name ? ' — ' + loc.name : ''}`"
+              :value="loc.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="locationVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitLocation">保存</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="adjustVisible" title="调整库存" width="440px">
       <el-form label-width="90px">
