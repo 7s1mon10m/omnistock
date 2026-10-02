@@ -23,5 +23,9 @@ OperatorGuard = Annotated[User, require_roles("admin", "owner", "operator")]
 BuyerGuard = Annotated[User, require_roles("admin", "owner", "buyer")]
 #: 仓内作业与库存调整
 WarehouseGuard = Annotated[User, require_roles("admin", "owner", "warehouse")]
+#: 发货流程：运营可以开单，仓管负责拣货出库，两者都能推
+FulfillmentGuard = Annotated[
+    User, require_roles("admin", "owner", "operator", "warehouse")
+]
 #: 任何已登录用户
 ViewerGuard = Annotated[User, require_roles("admin", "owner", "operator", "buyer", "warehouse")]

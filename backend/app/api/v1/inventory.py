@@ -19,6 +19,7 @@ from app.schemas.inventory import (
     InventoryReserveRequest,
     InventoryStockRead,
     InventoryTransactionRead,
+    StockLocationUpdate,
 )
 from app.services import combo_service, inventory_service
 
@@ -87,6 +88,23 @@ def list_ledger(
         page=result.page,
         page_size=result.page_size,
     )
+
+
+@router.patch(
+    "/location",
+    response_model=InventoryStockRead,
+    summary="设置默认拣货库位（拣货单按它排序）",
+)
+def set_stock_location(
+    payload: StockLocationUpdate, session: DbSession, _: WarehouseGuard
+) -> InventoryStockRead:
+    stock = inventory_service.set_stock_location(
+        session,
+        sku_id=payload.sku_id,
+        warehouse_id=payload.warehouse_id,
+        location_id=payload.location_id,
+    )
+    return inventory_service.to_stock_read(stock)
 
 
 @router.post("/adjust", response_model=InventoryTransactionRead, summary="手工调整库存（必填原因）")
