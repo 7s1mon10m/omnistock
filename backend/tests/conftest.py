@@ -363,3 +363,94 @@ def stock_of(
         f"{API}/inventory?sku_id={sku_id}&page_size=200", headers=headers
     ).json()["items"]
     return next(row for row in rows if row["warehouse_id"] == warehouse_id)
+
+
+# ------------------------------------------------------- M3: shipping & picking
+def create_location(
+    client: TestClient, headers: dict[str, str], warehouse_id: int, code: str, name: str = ""
+) -> dict:
+    response = client.post(
+        f"{API}/warehouses/{warehouse_id}/locations",
+        json={"code": code, "name": name or code, "zone": code.split("-")[0]},
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def set_stock_location(
+    client: TestClient,
+    headers: dict[str, str],
+    sku_id: int,
+    warehouse_id: int,
+    location_id: int | None,
+) -> Response:
+    return client.patch(
+        f"{API}/inventory/location",
+        json={"sku_id": sku_id, "warehouse_id": warehouse_id, "location_id": location_id},
+        headers=headers,
+    )
+
+
+def create_shipment(
+    client: TestClient, headers: dict[str, str], order_id: int, **extra
+) -> Response:
+    return client.post(f"{API}/shipments", json={"order_id": order_id, **extra}, headers=headers)
+
+
+def get_shipment(client: TestClient, headers: dict[str, str], shipment_id: int) -> dict:
+    response = client.get(f"{API}/shipments/{shipment_id}", headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def pick(
+    client: TestClient,
+    headers: dict[str, str],
+    shipment_id: int,
+    barcode: str,
+    quantity: int = 1,
+) -> Response:
+    return client.post(
+        f"{API}/shipments/{shipment_id}/pick",
+        json={"barcode": barcode, "quantity": quantity},
+        headers=headers,
+    )
+
+
+def pack(client: TestClient, headers: dict[str, str], shipment_id: int, **extra) -> Response:
+    return client.post(
+        f"{API}/shipments/{shipment_id}/pack",
+        json={"package_count": 1, "weight_g": 0, **extra},
+        headers=headers,
+    )
+
+
+def ship(client: TestClient, headers: dict[str, str], shipment_id: int, **extra) -> Response:
+    return client.post(
+        f"{API}/shipments/{shipment_id}/ship",
+        json={"carrier": "顺丰", "tracking_no": "SF0001", **extra},
+        headers=headers,
+    )
+
+
+def pick_everything(
+    client: TestClient, headers: dict[str, str], shipment: dict
+) -> list[str]:
+    """Scan every line of a pick list to completion; returns rejected messages."""
+    rejected: list[str] = []
+    for item in shipment["items"]:
+        response = pick(
+            client, headers, shipment["id"], item["barcode"], item["quantity"]
+        )
+        if not response.json().get("accepted"):
+            rejected.append(response.json().get("message", ""))
+    return rejected
+
+
+def first_order_id(client: TestClient, headers: dict[str, str], channel_order_no: str) -> int:
+    listed = client.get(
+        f"{API}/orders?keyword={channel_order_no}", headers=headers
+    ).json()
+    assert listed["total"] == 1, listed
+    return listed["items"][0]["id"]
