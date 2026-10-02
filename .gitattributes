@@ -1,0 +1,26 @@
+# Normalise line endings so the repo behaves the same on Windows and Unix.
+* text=auto eol=lf
+
+# Shell scripts must keep LF or they will not run inside the Linux containers.
+*.sh text eol=lf
+
+# Windows-only files keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets are never touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+
+# Keep diffs readable.
+*.md text
+*.json text
+*.yaml text
+*.yml text
+
+# Generated artefacts.
+package-lock.json linguist-generated=true

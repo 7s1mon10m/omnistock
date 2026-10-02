@@ -1,0 +1,105 @@
+# One-command local deployment:  docker compose up -d --build
+#
+# Services
+#   api     FastAPI backend, applies migrations on start
+#   web     nginx serving the built SPA and proxying /api to api
+#   db      PostgreSQL 16 (optional; the default profile uses SQLite)
+#
+# Profiles
+#   default   api + web, SQLite stored in the named volume `omnistock-data`
+#   postgres  adds db, and api connects to it instead of SQLite
+#
+# Usage
+#   docker compose up -d --build                     # SQLite
+#   docker compose --profile postgres up -d --build  # PostgreSQL（推荐）
+
+name: omnistock
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: omnistock/api:local
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_JSON: ${LOG_JSON:-true}
+      EXPOSE_DOCS: ${EXPOSE_DOCS:-false}
+      DATABASE_URL: >-
+        ${DATABASE_URL_OVERRIDE:-sqlite:///./storage/omnistock.db}
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?AUTH_SECRET_KEY 必须设置，请参考 .env.example}
+      DEFAULT_ADMIN_USERNAME: ${DEFAULT_ADMIN_USERNAME:-admin}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:?DEFAULT_ADMIN_PASSWORD 必须设置}
+      DEFAULT_WAREHOUSE_CODE: ${DEFAULT_WAREHOUSE_CODE:-WH-MAIN}
+      INVENTORY_ALLOW_NEGATIVE: ${INVENTORY_ALLOW_NEGATIVE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      RUN_MIGRATIONS: "true"
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - omnistock-data:/app/storage
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks: [omnistock]
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api/v1
+    image: omnistock/web:local
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [omnistock]
+
+  # Optional PostgreSQL. Enable with: docker compose --profile postgres up -d
+  # PostgreSQL is recommended: stock reservation relies on row level locks.
+  db:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-omnistock}
+      POSTGRES_USER: ${POSTGRES_USER:-omnistock}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?使用 postgres profile 时必须设置 POSTGRES_PASSWORD}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - omnistock-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-omnistock} -d ${POSTGRES_DB:-omnistock}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [omnistock]
+
+volumes:
+  omnistock-data:
+  omnistock-db:
+
+networks:
+  omnistock:
+    driver: bridge
