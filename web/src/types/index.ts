@@ -148,6 +148,7 @@ export interface InventoryStock {
 
 export type TransactionType =
   | 'purchase_inbound'
+  | 'purchase_defective'
   | 'order_reserve'
   | 'order_release'
   | 'order_outbound'
@@ -183,6 +184,7 @@ export interface InventoryTransaction {
 
 export const TRANSACTION_LABELS: Record<TransactionType, string> = {
   purchase_inbound: '采购入库',
+  purchase_defective: '采购次品',
   order_reserve: '订单占用',
   order_release: '取消释放',
   order_outbound: '拣货出库',
@@ -546,4 +548,203 @@ export interface ShipmentActionResult {
 
 export function yuan(cents: number): string {
   return `¥${(cents / 100).toFixed(2)}`
+}
+
+// ------------------------------------------------------- purchasing (M4)
+export interface Supplier {
+  id: number
+  code: string
+  name: string
+  contact_name: string
+  contact_phone: string
+  email: string
+  address: string
+  payment_terms: string
+  lead_time_days: number
+  is_active: boolean
+  remark: string
+  open_order_count: number
+  created_at: string | null
+}
+
+export type PurchaseOrderStatus = 'draft' | 'submitted' | 'partial' | 'received' | 'cancelled'
+
+export const PURCHASE_STATUS_LABELS: Record<PurchaseOrderStatus, string> = {
+  draft: '草稿',
+  submitted: '待到货',
+  partial: '部分到货',
+  received: '已收齐',
+  cancelled: '已取消',
+}
+
+export const PURCHASE_STATUS_TAG: Record<PurchaseOrderStatus, string> = {
+  draft: 'info',
+  submitted: 'warning',
+  partial: 'primary',
+  received: 'success',
+  cancelled: 'info',
+}
+
+export interface PurchaseOrderItem {
+  id: number
+  line_no: number
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  quantity: number
+  received_qty: number
+  defective_qty: number
+  outstanding_qty: number
+  unit_price_cents: number
+  remark: string
+}
+
+export interface ReceiptBrief {
+  id: number
+  receipt_no: string
+  status: string
+  total_quantity: number
+  total_defective: number
+  received_at: string | null
+}
+
+export interface PurchaseOrderListItem {
+  id: number
+  po_no: string
+  supplier_name: string
+  warehouse_code: string
+  status: PurchaseOrderStatus
+  total_quantity: number
+  received_quantity: number
+  total_amount_cents: number
+  expected_at: string | null
+  created_at: string | null
+}
+
+export interface PurchaseOrder extends PurchaseOrderListItem {
+  supplier_id: number
+  supplier_code: string
+  warehouse_id: number
+  warehouse_name: string
+  ordered_at: string | null
+  is_fully_received: boolean
+  buyer_id: number | null
+  buyer_name: string
+  remark: string
+  items: PurchaseOrderItem[]
+  receipts: ReceiptBrief[]
+}
+
+export interface ReceiptItem {
+  id: number
+  order_item_id: number
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  quantity: number
+  defective_qty: number
+  qualified_qty: number
+  location_id: number | null
+  location_code: string
+  remark: string
+}
+
+export interface PurchaseReceipt {
+  id: number
+  receipt_no: string
+  order_id: number
+  po_no: string
+  warehouse_id: number
+  warehouse_code: string
+  status: string
+  received_by: number | null
+  received_by_name: string
+  received_at: string | null
+  total_quantity: number
+  total_defective: number
+  remark: string
+  items: ReceiptItem[]
+  created_at: string | null
+}
+
+export interface ReceiptResult {
+  receipt: PurchaseReceipt
+  order: PurchaseOrder
+  message: string
+}
+
+// -------------------------------------------------------- transfers (M5)
+export type TransferStatus =
+  | 'pending'
+  | 'approved'
+  | 'in_transit'
+  | 'received'
+  | 'rejected'
+  | 'cancelled'
+
+export const TRANSFER_STATUS_LABELS: Record<TransferStatus, string> = {
+  pending: '待审批',
+  approved: '待发出',
+  in_transit: '在途',
+  received: '已收货',
+  rejected: '已驳回',
+  cancelled: '已取消',
+}
+
+export const TRANSFER_STATUS_TAG: Record<TransferStatus, string> = {
+  pending: 'warning',
+  approved: 'primary',
+  in_transit: 'warning',
+  received: 'success',
+  rejected: 'danger',
+  cancelled: 'info',
+}
+
+export interface TransferItem {
+  id: number
+  line_no: number
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  quantity: number
+  shipped_qty: number
+  received_qty: number
+  defective_qty: number
+  qualified_qty: number
+  remark: string
+}
+
+export interface TransferListItem {
+  id: number
+  transfer_no: string
+  from_warehouse_code: string
+  to_warehouse_code: string
+  status: TransferStatus
+  reason: string
+  total_quantity: number
+  shipped_quantity: number
+  received_quantity: number
+  created_at: string | null
+}
+
+export interface StockTransfer extends TransferListItem {
+  from_warehouse_id: number
+  from_warehouse_name: string
+  to_warehouse_id: number
+  to_warehouse_name: string
+  remark: string
+  requested_by: number | null
+  requested_by_name: string
+  requested_at: string | null
+  approved_by: number | null
+  approved_by_name: string
+  approved_at: string | null
+  reject_reason: string
+  shipped_by: number | null
+  shipped_by_name: string
+  shipped_at: string | null
+  received_by: number | null
+  received_by_name: string
+  received_at: string | null
+  items: TransferItem[]
 }

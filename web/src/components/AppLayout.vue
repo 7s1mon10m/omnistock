@@ -12,6 +12,9 @@ const auth = useAuthStore()
 const MENU_PREFIXES = [
   '/order-exceptions',
   '/order-import',
+  '/purchase-orders',
+  '/suppliers',
+  '/transfers',
   '/channel-products',
   '/channels',
   '/orders',
@@ -60,6 +63,12 @@ async function onLogout() {
           <el-menu-item index="/order-import">订单导入</el-menu-item>
           <el-menu-item index="/order-exceptions">异常订单</el-menu-item>
           <el-menu-item index="/shipments">拣货发货</el-menu-item>
+          <el-sub-menu index="purchase">
+            <template #title>采购管理</template>
+            <el-menu-item index="/purchase-orders">采购单与收货</el-menu-item>
+            <el-menu-item index="/suppliers">供应商</el-menu-item>
+          </el-sub-menu>
+          <el-menu-item index="/transfers">仓库调拨</el-menu-item>
           <el-menu-item index="/products">商品管理</el-menu-item>
           <el-menu-item index="/inventory">库存总览</el-menu-item>
           <el-menu-item index="/bundles">组合商品</el-menu-item>
@@ -70,7 +79,7 @@ async function onLogout() {
             <el-menu-item index="/channel-products">渠道商品映射</el-menu-item>
           </el-sub-menu>
         </el-menu>
-        <div class="milestone">M3 · 仓库发货</div>
+        <div class="milestone">M5 · 采购收货与调拨</div>
       </el-aside>
       <el-main>
         <slot />

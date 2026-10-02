@@ -44,6 +44,33 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/transfers',
+      name: 'transfers',
+      component: () => import('@/views/TransferList.vue'),
+    },
+    {
+      path: '/transfers/:id',
+      name: 'transfer-detail',
+      component: () => import('@/views/TransferDetail.vue'),
+      props: true,
+    },
+    {
+      path: '/suppliers',
+      name: 'suppliers',
+      component: () => import('@/views/SupplierList.vue'),
+    },
+    {
+      path: '/purchase-orders',
+      name: 'purchase-orders',
+      component: () => import('@/views/PurchaseOrderList.vue'),
+    },
+    {
+      path: '/purchase-orders/:id',
+      name: 'purchase-detail',
+      component: () => import('@/views/PurchaseOrderDetail.vue'),
+      props: true,
+    },
+    {
       path: '/channels',
       name: 'channels',
       component: () => import('@/views/ChannelConfig.vue'),
