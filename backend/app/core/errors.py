@@ -39,6 +39,12 @@ CHANNEL_PRODUCT_NOT_FOUND = 40422
 ORDER_NOT_FOUND = 40423
 SHIPMENT_NOT_FOUND = 40440
 SHIPMENT_ITEM_NOT_FOUND = 40441
+SUPPLIER_NOT_FOUND = 40450
+PURCHASE_ORDER_NOT_FOUND = 40451
+PURCHASE_ITEM_NOT_FOUND = 40452
+PURCHASE_RECEIPT_NOT_FOUND = 40453
+TRANSFER_NOT_FOUND = 40460
+TRANSFER_ITEM_NOT_FOUND = 40461
 
 # -------------------------------------------------------------- conflict (409xx)
 SPU_CODE_DUPLICATE = 40901
@@ -67,6 +73,17 @@ PICK_INCOMPLETE = 40934
 SHIPMENT_NOT_PACKED = 40935
 OUTBOUND_STOCK_MISMATCH = 40936
 ORDER_NOT_RESERVED = 40937
+# ---------------------------------------------------------- purchasing (409xx)
+SUPPLIER_CODE_DUPLICATE = 40940
+PURCHASE_ORDER_STATUS_INVALID = 40941
+RECEIPT_QUANTITY_EXCEEDS = 40942
+PURCHASE_ORDER_NO_ITEMS = 40943
+# ----------------------------------------------------------- transfers (409xx)
+TRANSFER_SAME_WAREHOUSE = 40950
+TRANSFER_STATUS_INVALID = 40951
+TRANSFER_STOCK_SHORTAGE = 40952
+TRANSFER_QUANTITY_EXCEEDS = 40953
+TRANSFER_NO_ITEMS = 40954
 
 # ------------------------------------------------------------ bad request (400xx)
 INVENTORY_ADJUST_ZERO_DELTA = 40010
@@ -79,6 +96,8 @@ IMPORT_EMPTY = 40022
 ORDER_NO_ITEMS = 40023
 SHIPMENT_NO_ITEMS = 40030
 BARCODE_REQUIRED = 40031
+RECEIPT_QUANTITY_INVALID = 40040
+TRANSFER_QUANTITY_INVALID = 40041
 
 # ----------------------------------------------------------- unprocessable (422xx)
 IMPORT_PARSE_ERROR = 42210
@@ -102,6 +121,12 @@ DEFAULT_MESSAGES = {
     ORDER_NOT_FOUND: "订单不存在",
     SHIPMENT_NOT_FOUND: "发货单不存在",
     SHIPMENT_ITEM_NOT_FOUND: "发货单里没有这个商品行",
+    SUPPLIER_NOT_FOUND: "供应商不存在",
+    PURCHASE_ORDER_NOT_FOUND: "采购单不存在",
+    PURCHASE_ITEM_NOT_FOUND: "采购单里没有这个商品行",
+    PURCHASE_RECEIPT_NOT_FOUND: "收货单不存在",
+    TRANSFER_NOT_FOUND: "调拨单不存在",
+    TRANSFER_ITEM_NOT_FOUND: "调拨单里没有这个商品行",
     SPU_CODE_DUPLICATE: "商品编码已存在",
     SKU_CODE_DUPLICATE: "SKU 编码已存在",
     BARCODE_DUPLICATE: "条码已被占用",
@@ -126,6 +151,15 @@ DEFAULT_MESSAGES = {
     SHIPMENT_NOT_PACKED: "发货单尚未复核打包，不能出库",
     OUTBOUND_STOCK_MISMATCH: "出库时库存不足或占用数不符，请检查库存流水",
     ORDER_NOT_RESERVED: "只有已占用库存的订单才能生成发货单",
+    SUPPLIER_CODE_DUPLICATE: "供应商编码已存在",
+    PURCHASE_ORDER_STATUS_INVALID: "采购单当前状态不允许该操作",
+    RECEIPT_QUANTITY_EXCEEDS: "到货数量超过下单数量",
+    PURCHASE_ORDER_NO_ITEMS: "采购单没有任何商品行",
+    TRANSFER_SAME_WAREHOUSE: "调出仓与调入仓不能是同一个仓库",
+    TRANSFER_STATUS_INVALID: "调拨单当前状态不允许该操作",
+    TRANSFER_STOCK_SHORTAGE: "调出仓可售库存不足",
+    TRANSFER_QUANTITY_EXCEEDS: "调拨数量超过本次应发数量",
+    TRANSFER_NO_ITEMS: "调拨单没有任何商品行",
     INVENTORY_ADJUST_ZERO_DELTA: "调整数量不能为 0",
     BUNDLE_CANNOT_NEST: "组合商品不能嵌套其他组合商品",
     SKU_STATUS_INVALID: "SKU 状态不允许该操作",
@@ -136,6 +170,8 @@ DEFAULT_MESSAGES = {
     ORDER_NO_ITEMS: "订单没有任何商品行",
     SHIPMENT_NO_ITEMS: "发货单没有任何商品行",
     BARCODE_REQUIRED: "该仓库要求扫码拣货，请提供条码",
+    RECEIPT_QUANTITY_INVALID: "到货数量或次品数量不合法（次品不能多于到货量）",
+    TRANSFER_QUANTITY_INVALID: "调拨数量必须大于 0，且次品不能多于到货量",
 }
 
 

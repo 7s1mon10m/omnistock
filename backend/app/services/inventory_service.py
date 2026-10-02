@@ -26,7 +26,9 @@ from app.core.errors import (
     INVENTORY_CONCURRENT_CONFLICT,
     LOCATION_NOT_FOUND,
     OUTBOUND_STOCK_MISMATCH,
+    RECEIPT_QUANTITY_INVALID,
     SKU_NOT_FOUND,
+    TRANSFER_QUANTITY_INVALID,
     WAREHOUSE_NOT_FOUND,
 )
 from app.domain import stock_formula
@@ -127,11 +129,18 @@ def _apply(
 
     on_hand_before = stock.on_hand_qty
     reserved_before = stock.reserved_qty
+    in_transit_before = stock.in_transit_qty
+    defective_before = stock.defective_qty
 
     new_on_hand = on_hand_before + qty_delta
     new_reserved = reserved_before + reserved_delta
+    new_in_transit = in_transit_before + in_transit_delta
+    new_defective = defective_before + defective_delta
+    new_repair = stock.repair_qty + repair_delta
 
-    if not allow_negative and (new_on_hand < 0 or new_reserved < 0):
+    if not allow_negative and (
+        new_on_hand < 0 or new_reserved < 0 or new_in_transit < 0 or new_defective < 0 or new_repair < 0
+    ):
         raise BusinessError(
             INSUFFICIENT_STOCK,
             detail={
@@ -139,6 +148,7 @@ def _apply(
                 "warehouse_id": warehouse_id,
                 "on_hand": on_hand_before,
                 "reserved": reserved_before,
+                "in_transit": in_transit_before,
                 "requested": qty_delta if qty_delta else reserved_delta,
             },
             http_status=409,
@@ -146,9 +156,9 @@ def _apply(
 
     stock.on_hand_qty = new_on_hand
     stock.reserved_qty = new_reserved
-    stock.in_transit_qty += in_transit_delta
-    stock.defective_qty += defective_delta
-    stock.repair_qty += repair_delta
+    stock.in_transit_qty = new_in_transit
+    stock.defective_qty = new_defective
+    stock.repair_qty = new_repair
     # Bump the optimistic-lock version on every movement.
     stock.version += 1
 
@@ -163,6 +173,10 @@ def _apply(
         on_hand_after=stock.on_hand_qty,
         reserved_before=reserved_before,
         reserved_after=stock.reserved_qty,
+        in_transit_before=in_transit_before,
+        in_transit_after=stock.in_transit_qty,
+        defective_before=defective_before,
+        defective_after=stock.defective_qty,
         ref_type=ref_type,
         ref_id=ref_id,
         operator_id=operator_id,
@@ -391,6 +405,146 @@ def set_stock_location(
     return stock
 
 
+def receive_purchase(
+    session: Session,
+    *,
+    sku_id: int,
+    warehouse_id: int,
+    qualified_qty: int = 0,
+    defective_qty: int = 0,
+    location_id: int | None = None,
+    ref_type: str = "purchase_receipt",
+    ref_id: int | None = None,
+    operator_id: int | None = None,
+    remark: str = "",
+    idempotency_key: str | None = None,
+) -> list[InventoryTransaction]:
+    """采购到货的质检分流：合格进可售，次品进次品区。
+
+    写两条独立流水，因为这是两笔不同的账面变化 —— 合格品提高可售，次品只进
+    次品区、永远不参与可售。混成一条会让「实际库存」这个数字失去意义。
+    """
+    if qualified_qty < 0 or defective_qty < 0 or (qualified_qty + defective_qty) <= 0:
+        raise BusinessError(RECEIPT_QUANTITY_INVALID, http_status=400)
+
+    transactions: list[InventoryTransaction] = []
+    if qualified_qty:
+        transactions.append(
+            _apply(
+                session,
+                sku_id=sku_id,
+                warehouse_id=warehouse_id,
+                type_=InventoryTransactionType.PURCHASE_INBOUND,
+                qty_delta=qualified_qty,
+                location_id=location_id,
+                ref_type=ref_type,
+                ref_id=ref_id,
+                operator_id=operator_id,
+                remark=remark,
+                idempotency_key=f"{idempotency_key}:q" if idempotency_key else None,
+                safety_qty=0,
+            )
+        )
+    if defective_qty:
+        transactions.append(
+            _apply(
+                session,
+                sku_id=sku_id,
+                warehouse_id=warehouse_id,
+                # qty_delta 保持 0：实际库存没变，变的是次品区。
+                type_=InventoryTransactionType.PURCHASE_DEFECTIVE,
+                qty_delta=0,
+                defective_delta=defective_qty,
+                ref_type=ref_type,
+                ref_id=ref_id,
+                operator_id=operator_id,
+                remark=remark or "采购到货次品",
+                idempotency_key=f"{idempotency_key}:d" if idempotency_key else None,
+            )
+        )
+    return transactions
+
+
+def transfer_ship(
+    session: Session,
+    *,
+    sku_id: int,
+    from_warehouse_id: int,
+    to_warehouse_id: int,
+    quantity: int,
+    ref_id: int | None = None,
+    operator_id: int | None = None,
+    remark: str = "",
+    idempotency_key: str | None = None,
+) -> list[InventoryTransaction]:
+    """调拨发出。在两个仓库各写一条流水。
+
+    在途记在**调入仓**（口径是「发往本仓的在途」）：调出仓实际库存减少，调入仓
+    在途增加，可售两边都不受影响 —— 在途不可售这条规则在这里得到体现。
+    """
+    if quantity <= 0:
+        raise BusinessError(TRANSFER_QUANTITY_INVALID, "调拨数量必须大于 0", http_status=400)
+
+    out_tx = _apply(
+        session,
+        sku_id=sku_id,
+        warehouse_id=from_warehouse_id,
+        type_=InventoryTransactionType.TRANSFER_OUT,
+        qty_delta=-quantity,
+        ref_type="stock_transfer",
+        ref_id=ref_id,
+        operator_id=operator_id,
+        remark=remark or "调拨发出",
+        idempotency_key=f"{idempotency_key}:out" if idempotency_key else None,
+    )
+    in_transit_tx = _apply(
+        session,
+        sku_id=sku_id,
+        warehouse_id=to_warehouse_id,
+        type_=InventoryTransactionType.TRANSFER_OUT,
+        qty_delta=0,
+        in_transit_delta=quantity,
+        ref_type="stock_transfer",
+        ref_id=ref_id,
+        operator_id=operator_id,
+        remark=remark or "调入在途",
+        idempotency_key=f"{idempotency_key}:transit" if idempotency_key else None,
+    )
+    return [out_tx, in_transit_tx]
+
+
+def transfer_receive(
+    session: Session,
+    *,
+    sku_id: int,
+    to_warehouse_id: int,
+    quantity: int,
+    defective_qty: int = 0,
+    ref_id: int | None = None,
+    operator_id: int | None = None,
+    remark: str = "",
+    idempotency_key: str | None = None,
+) -> InventoryTransaction:
+    """调入仓收货：在途转为实际，次品单独入次品区。"""
+    if quantity <= 0 or defective_qty < 0 or defective_qty > quantity:
+        raise BusinessError(TRANSFER_QUANTITY_INVALID, http_status=400)
+
+    return _apply(
+        session,
+        sku_id=sku_id,
+        warehouse_id=to_warehouse_id,
+        type_=InventoryTransactionType.TRANSFER_IN,
+        qty_delta=quantity - defective_qty,
+        in_transit_delta=-quantity,
+        defective_delta=defective_qty,
+        ref_type="stock_transfer",
+        ref_id=ref_id,
+        operator_id=operator_id,
+        remark=remark or "调拨收货",
+        idempotency_key=idempotency_key,
+    )
+
+
 def inbound(
     session: Session,
     *,
@@ -465,6 +619,10 @@ def to_transaction_read(tx: InventoryTransaction) -> InventoryTransactionRead:
         on_hand_after=tx.on_hand_after,
         reserved_before=tx.reserved_before,
         reserved_after=tx.reserved_after,
+        in_transit_before=tx.in_transit_before,
+        in_transit_after=tx.in_transit_after,
+        defective_before=tx.defective_before,
+        defective_after=tx.defective_after,
         ref_type=tx.ref_type,
         ref_id=tx.ref_id,
         operator_id=tx.operator_id,

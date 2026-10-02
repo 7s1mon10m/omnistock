@@ -27,7 +27,8 @@ from app.models.warehouse import Warehouse, WarehouseLocation
 class InventoryTransactionType(str, Enum):
     """Every reason stock may move.  Once written, a row is never edited."""
 
-    PURCHASE_INBOUND = "purchase_inbound"    # 采购入库
+    PURCHASE_INBOUND = "purchase_inbound"    # 采购入库（合格品）
+    PURCHASE_DEFECTIVE = "purchase_defective"  # 采购入库（次品，进次品区）
     ORDER_RESERVE = "order_reserve"          # 订单占用
     ORDER_RELEASE = "order_release"          # 订单取消释放
     ORDER_OUTBOUND = "order_outbound"        # 拣货出库
@@ -113,6 +114,12 @@ class InventoryTransaction(Base, TimestampMixin):
     on_hand_after: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     reserved_before: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     reserved_after: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 在途（M5 调拨：发出后在调入仓累计，收货时转入实际）
+    in_transit_before: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    in_transit_after: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 次品（M4 采购质检分流）
+    defective_before: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    defective_after: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Source document, e.g. ("sales_order", 42) or ("manual", None).
     ref_type: Mapped[str] = mapped_column(String(32), default="", nullable=False)

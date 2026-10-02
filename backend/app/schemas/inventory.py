@@ -91,6 +91,10 @@ class InventoryTransactionRead(BaseModel):
     on_hand_after: int
     reserved_before: int
     reserved_after: int
+    in_transit_before: int = 0
+    in_transit_after: int = 0
+    defective_before: int = 0
+    defective_after: int = 0
     ref_type: str
     ref_id: int | None
     operator_id: int | None

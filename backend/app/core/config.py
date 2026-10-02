@@ -89,6 +89,22 @@ class Settings(BaseSettings):
     # 拣货单里没有维护库位的 SKU 的排序值，越往后越晚拣
     PICK_UNASSIGNED_LOCATION_ORDER: str = "zzzz"
 
+    # ------------------------------------------------------ purchasing (M4)
+    SUPPLIER_CODE_PREFIX: str = "SUP"
+    PURCHASE_ORDER_PREFIX: str = "PO"
+    PURCHASE_RECEIPT_PREFIX: str = "PR"
+    # 建采购单时若不填预计到货日，按供应商的交期推
+    PURCHASE_DEFAULT_LEAD_TIME_DAYS: int = 7
+    # 采购单允许超收的比例（%）—— 0 表示严格不超过下单量
+    PURCHASE_OVER_RECEIPT_PERCENT: int = 0
+
+    # ------------------------------------------------------- transfers (M5)
+    TRANSFER_CODE_PREFIX: str = "TR"
+    # 调拨是否需要审批。小团队可以关掉，直接进入待发出。
+    TRANSFER_REQUIRE_APPROVAL: bool = True
+    # 收货时允许出现次品的比例上限（%），用于验收把关；0 表示不限制
+    TRANSFER_MAX_DEFECTIVE_PERCENT: int = 0
+
     # ----------------------------------------------------------------- logging
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = False
