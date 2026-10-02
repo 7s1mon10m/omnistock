@@ -26,6 +26,7 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from httpx import Response  # noqa: E402
 
+from app.core.config import settings  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.db import SessionLocal, init_db  # noqa: E402
 from app.main import app  # noqa: E402
@@ -243,3 +244,122 @@ def reserve_stock(
         json={"sku_id": sku_id, "warehouse_id": warehouse_id, "quantity": quantity, **extra},
         headers=headers,
     )
+
+
+# ------------------------------------------------------- M2: channels & orders
+def create_channel(
+    client: TestClient,
+    headers: dict[str, str],
+    code: str | None = None,
+    name: str = "测试渠道",
+    platform: str = "taobao",
+) -> dict:
+    code = code or uniq("CH")
+    listed = client.get(f"{API}/channels?keyword={code}&page_size=200", headers=headers).json()
+    for item in listed["items"]:
+        if item["code"] == code:
+            return item
+    response = client.post(
+        f"{API}/channels", json={"code": code, "name": name, "platform": platform}, headers=headers
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def create_shop(
+    client: TestClient, headers: dict[str, str], channel_id: int, code: str | None = None
+) -> dict:
+    code = code or uniq("SH")
+    response = client.post(
+        f"{API}/channels/{channel_id}/shops", json={"code": code, "name": code}, headers=headers
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def create_mapping(
+    client: TestClient,
+    headers: dict[str, str],
+    channel_id: int,
+    channel_product_code: str,
+    sku_id: int,
+    **extra,
+) -> Response:
+    return client.post(
+        f"{API}/channel-products",
+        json={
+            "channel_id": channel_id,
+            "channel_product_code": channel_product_code,
+            "sku_id": sku_id,
+            **extra,
+        },
+        headers=headers,
+    )
+
+
+def import_orders(
+    client: TestClient, headers: dict[str, str], orders: list[dict], **extra
+) -> Response:
+    return client.post(
+        f"{API}/orders/import-json",
+        json={"source": "import_json", "filename": "test.json", "orders": orders, **extra},
+        headers=headers,
+    )
+
+
+def order_payload(
+    channel_code: str,
+    channel_order_no: str,
+    items: list[dict],
+    *,
+    shop_code: str | None = None,
+    warehouse_code: str | None = None,
+    buyer_nick: str = "测试买家",
+    paid_at: str | None = None,
+) -> dict:
+    payload: dict = {
+        "channel_code": channel_code,
+        "channel_order_no": channel_order_no,
+        "buyer_nick": buyer_nick,
+        "items": items,
+    }
+    if shop_code:
+        payload["shop_code"] = shop_code
+    if warehouse_code:
+        payload["warehouse_code"] = warehouse_code
+    if paid_at:
+        payload["paid_at"] = paid_at
+    return payload
+
+
+@pytest.fixture()
+def catalog(client, owner_headers, monkeypatch):
+    """A private warehouse with one plain SKU stocked to 100.
+
+    Each call gets its own namespace (warehouse + SKU codes) so order tests never
+    interfere with each other or with the inventory tests.  The warehouse is also
+    made the *default* one, which is what an order without an explicit
+    ``warehouse_code`` resolves to.
+    """
+    tag = uniq("CAT")
+    warehouse = create_warehouse(client, owner_headers, name=f"目录仓{tag}", code=f"WH-{tag}")
+    spu = create_spu(client, owner_headers, f"SPU-{tag}", "测试商品")
+    sku = create_sku(client, owner_headers, spu["id"], sku_code=f"SKU-{tag}", safety_qty=0)
+    adjust_stock(client, owner_headers, sku["id"], warehouse["id"], 100, "备货")
+    monkeypatch.setattr(settings, "DEFAULT_WAREHOUSE_CODE", warehouse["code"])
+    return {
+        "warehouse": warehouse,
+        "spu": spu,
+        "sku": sku,
+        "tag": tag,
+        "headers": owner_headers,
+    }
+
+
+def stock_of(
+    client: TestClient, headers: dict[str, str], sku_id: int, warehouse_id: int
+) -> dict:
+    rows = client.get(
+        f"{API}/inventory?sku_id={sku_id}&page_size=200", headers=headers
+    ).json()["items"]
+    return next(row for row in rows if row["warehouse_id"] == warehouse_id)
