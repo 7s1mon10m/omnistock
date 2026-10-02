@@ -19,10 +19,14 @@ from app.models.order import (
 )
 from app.utils.pagination import PageResult, paginate
 
-#: The two ledger types that describe "stock held for this order".
+#: Ledger types that describe stock held *for* an order.
+#: ``order_reserve`` adds to the hold; ``order_release`` (cancellation) and
+#: ``order_outbound`` (shipping) both take away from it — so summing the three
+#: gives what the order is still holding right now.
 RESERVATION_TYPES = (
     InventoryTransactionType.ORDER_RESERVE,
     InventoryTransactionType.ORDER_RELEASE,
+    InventoryTransactionType.ORDER_OUTBOUND,
 )
 
 

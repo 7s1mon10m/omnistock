@@ -24,6 +24,8 @@ from app.core.errors import (
     INSUFFICIENT_STOCK,
     INVENTORY_ADJUST_ZERO_DELTA,
     INVENTORY_CONCURRENT_CONFLICT,
+    LOCATION_NOT_FOUND,
+    OUTBOUND_STOCK_MISMATCH,
     SKU_NOT_FOUND,
     WAREHOUSE_NOT_FOUND,
 )
@@ -296,6 +298,99 @@ def release(
     )
 
 
+def outbound(
+    session: Session,
+    *,
+    sku_id: int,
+    warehouse_id: int,
+    quantity: int,
+    location_id: int | None = None,
+    ref_type: str = "",
+    ref_id: int | None = None,
+    operator_id: int | None = None,
+    remark: str = "",
+    idempotency_key: str | None = None,
+) -> InventoryTransaction:
+    """Ship stock out: 实际库存与已占用**同时**减少。
+
+    This is the step that turns a reservation into a real departure.  Both
+    floors are enforced in one conditional UPDATE, so a row can never end up
+    with negative on-hand or a reservation that outlived its stock.
+    """
+    if quantity <= 0:
+        raise BusinessError(INVENTORY_ADJUST_ZERO_DELTA, "出库数量必须大于 0", http_status=400)
+
+    if idempotency_key:
+        existing = inventory_repo.get_transaction_by_idempotency(session, idempotency_key)
+        if existing is not None:
+            return existing
+
+    stock = _lock_or_create(session, sku_id, warehouse_id)
+
+    if not inventory_repo.try_outbound_atomic(session, sku_id, warehouse_id, quantity):
+        session.refresh(stock)
+        raise BusinessError(
+            OUTBOUND_STOCK_MISMATCH,
+            detail={
+                "sku_id": sku_id,
+                "warehouse_id": warehouse_id,
+                "on_hand": stock.on_hand_qty,
+                "reserved": stock.reserved_qty,
+                "requested": quantity,
+            },
+            http_status=409,
+        )
+
+    session.refresh(stock)
+
+    return inventory_repo.append_transaction(
+        session,
+        sku_id=sku_id,
+        warehouse_id=warehouse_id,
+        location_id=location_id,
+        type=InventoryTransactionType.ORDER_OUTBOUND,
+        qty_delta=-quantity,
+        on_hand_before=stock.on_hand_qty + quantity,
+        on_hand_after=stock.on_hand_qty,
+        reserved_before=stock.reserved_qty + quantity,
+        reserved_after=stock.reserved_qty,
+        ref_type=ref_type,
+        ref_id=ref_id,
+        operator_id=operator_id,
+        idempotency_key=idempotency_key,
+        remark=remark,
+    )
+
+
+def set_stock_location(
+    session: Session, *, sku_id: int, warehouse_id: int, location_id: int | None
+) -> InventoryStock:
+    """Assign (or clear) the standing pick location used to sort pick lists."""
+    sku = product_repo.get_sku(session, sku_id)
+    if sku is None:
+        raise BusinessError(SKU_NOT_FOUND, detail={"sku_id": sku_id}, http_status=404)
+    warehouse = warehouse_repo.get(session, warehouse_id)
+    if warehouse is None:
+        raise BusinessError(
+            WAREHOUSE_NOT_FOUND, detail={"warehouse_id": warehouse_id}, http_status=404
+        )
+
+    if location_id is not None:
+        location = warehouse_repo.get_location(session, location_id)
+        # A location from another warehouse would produce a nonsensical pick route.
+        if location is None or location.warehouse_id != warehouse_id:
+            raise BusinessError(
+                LOCATION_NOT_FOUND,
+                detail={"location_id": location_id, "warehouse_id": warehouse_id},
+                http_status=404,
+            )
+
+    stock = _lock_or_create(session, sku_id, warehouse_id, safety_qty=sku.safety_qty)
+    inventory_repo.set_default_location(session, stock, location_id)
+    session.commit()
+    return stock
+
+
 def inbound(
     session: Session,
     *,
@@ -348,6 +443,8 @@ def to_stock_read(stock: InventoryStock) -> InventoryStockRead:
         available_qty=stock_formula.available_qty(
             stock.on_hand_qty, stock.reserved_qty, stock.safety_qty
         ),
+        default_location_id=stock.default_location_id,
+        default_location_code=stock.default_location.code if stock.default_location else "",
         version=stock.version,
         updated_at=stock.updated_at,
     )

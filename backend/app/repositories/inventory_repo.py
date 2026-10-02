@@ -98,6 +98,40 @@ def try_release_atomic(session: Session, sku_id: int, warehouse_id: int, quantit
     return (result.rowcount or 0) > 0
 
 
+def try_outbound_atomic(session: Session, sku_id: int, warehouse_id: int, quantity: int) -> bool:
+    """Ship ``quantity`` out: physical stock and the reservation drop together.
+
+    Both floors are part of the WHERE clause, so the row can never end up with
+    negative on-hand or a reservation that outlived the stock it held.
+    """
+    stmt = (
+        update(InventoryStock)
+        .where(
+            InventoryStock.sku_id == sku_id,
+            InventoryStock.warehouse_id == warehouse_id,
+            InventoryStock.on_hand_qty >= quantity,
+            InventoryStock.reserved_qty >= quantity,
+        )
+        .values(
+            on_hand_qty=InventoryStock.on_hand_qty - quantity,
+            reserved_qty=InventoryStock.reserved_qty - quantity,
+            version=InventoryStock.version + 1,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    result = session.execute(stmt)
+    return (result.rowcount or 0) > 0
+
+
+def set_default_location(
+    session: Session, stock: InventoryStock, location_id: int | None
+) -> InventoryStock:
+    """Remember the standing pick location for this SKU in this warehouse."""
+    stock.default_location_id = location_id
+    session.flush()
+    return stock
+
+
 def list_stocks(
     session: Session,
     *,
