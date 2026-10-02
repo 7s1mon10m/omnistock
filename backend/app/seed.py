@@ -9,20 +9,34 @@ get-or-create.
 
 from __future__ import annotations
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.adapters.base import ParsedImport
 from app.core.config import settings
 from app.core.security import hash_password
 from app.db import SessionLocal, init_db
+from app.models.channel import ChannelPlatform
+from app.models.order import OrderSource, SalesOrder
 from app.models.product import SpuType
 from app.models.warehouse import WarehouseType
-from app.repositories import inventory_repo, product_repo, user_repo, warehouse_repo
+from app.repositories import (
+    channel_repo,
+    inventory_repo,
+    product_repo,
+    user_repo,
+    warehouse_repo,
+)
+from app.schemas.channel import ChannelCreate, ChannelProductCreate, ShopCreate
 from app.schemas.inventory import InventoryAdjustRequest
+from app.schemas.order import OrderIn, OrderItemIn
 from app.schemas.product import BundleComponentIn, BundleSetRequest, SkuCreate, SpuCreate
 from app.services import (
     auth_service,
+    channel_service,
     combo_service,
     inventory_service,
+    order_import_service,
     permission_service,
     product_service,
     warehouse_service,
@@ -60,6 +74,45 @@ SKUS = [
 
 BUNDLE_SKU = "GIFT-SET-01"
 BUNDLE_COMPONENTS = [("SHAMPOO-500", 1), ("CONDITIONER-500", 1)]
+
+# --------------------------------------------------------------------- M2 data
+# (code, name, platform)
+CHANNELS = [
+    ("TB", "淘宝", ChannelPlatform.TAOBAO),
+    ("DY", "抖音", ChannelPlatform.DOUYIN),
+    ("SHOP", "Shopify 独立站", ChannelPlatform.SHOPIFY),
+]
+
+# (channel code, shop code, shop name)
+SHOPS = [
+    ("TB", "TB-SHOP-1", "淘宝旗舰店"),
+    ("DY", "DY-SHOP-1", "抖音小店"),
+    ("SHOP", "SHOP-1", "独立站主站"),
+]
+
+# (channel code, external product code, internal sku code, title)
+# The whole point: three different platform codes all resolve to the same
+# internal SKU, so they share one stock pool.
+MAPPINGS = [
+    ("TB", "TB-100238", "TSHIRT-WHITE-L", "夏季纯棉短袖 白色 L"),
+    ("TB", "TB-100239", "TSHIRT-WHITE-M", "夏季纯棉短袖 白色 M"),
+    ("TB", "TB-100240", "TSHIRT-BLACK-L", "夏季纯棉短袖 黑色 L"),
+    ("TB", "TB-100301", "GIFT-SET-01", "洗护套装 礼盒装"),
+    ("DY", "DY-883021", "TSHIRT-WHITE-L", "短袖T恤 白 L"),
+    ("DY", "DY-883101", "SHAMPOO-500", "清爽洗发水 500ml"),
+    ("SHOP", "SHOP-TS-001", "TSHIRT-WHITE-L", "Cotton Tee / White / L"),
+    ("SHOP", "SHOP-SET-001", "GIFT-SET-01", "Hair Care Gift Set"),
+]
+
+# Demo orders so the console is not empty on first run.
+# (channel, shop, order no, [(external code, qty, unit price cents)], buyer)
+DEMO_ORDERS = [
+    ("TB", "TB-SHOP-1", "TB202610020001", [("TB-100238", 2, 9900)], "张*三"),
+    ("DY", "DY-SHOP-1", "DY202610020001", [("DY-883021", 1, 9500), ("DY-883101", 2, 5900)], "李*四"),
+    ("SHOP", "SHOP-1", "SHOP-2026-0001", [("SHOP-SET-001", 3, 19900)], "王*五"),
+    # A deliberately short order: 500 units against a much smaller stock.
+    ("TB", "TB-SHOP-1", "TB202610020002", [("TB-100240", 500, 9900)], "赵*六"),
+]
 
 
 def _ensure_users(session: Session) -> None:
@@ -201,6 +254,92 @@ def _seed_opening_stock(session: Session, sku_ids: dict[str, int], warehouse_ids
     session.commit()
 
 
+def _ensure_channels(session: Session) -> dict[str, int]:
+    ids: dict[str, int] = {}
+    for code, name, platform in CHANNELS:
+        channel = channel_repo.get_channel_by_code(session, code)
+        if channel is None:
+            channel = channel_service.create_channel(
+                session, ChannelCreate(code=code, name=name, platform=platform)
+            )
+        ids[code] = channel.id
+
+    for channel_code, shop_code, shop_name in SHOPS:
+        channel_id = ids[channel_code]
+        if channel_repo.get_shop_by_code(session, channel_id, shop_code) is None:
+            channel_service.create_shop(
+                session, channel_id, ShopCreate(code=shop_code, name=shop_name)
+            )
+    return ids
+
+
+def _ensure_mappings(session: Session, sku_ids: dict[str, int]) -> int:
+    """Map every platform's own product code onto the shared internal SKUs."""
+    for channel_code, external_code, sku_code, title in MAPPINGS:
+        channel = channel_repo.get_channel_by_code(session, channel_code)
+        sku_id = sku_ids.get(sku_code)
+        if channel is None or sku_id is None:
+            continue
+        if channel_repo.get_mapping(session, channel.id, external_code) is not None:
+            continue
+        channel_service.create_mapping(
+            session,
+            ChannelProductCreate(
+                channel_id=channel.id,
+                channel_product_code=external_code,
+                sku_id=sku_id,
+                channel_title=title,
+            ),
+        )
+
+    present = 0
+    for channel_code, external_code, _sku_code, _title in MAPPINGS:
+        channel = channel_repo.get_channel_by_code(session, channel_code)
+        if channel is not None and channel_repo.get_mapping(session, channel.id, external_code):
+            present += 1
+    return present
+
+
+def _ensure_demo_orders(session: Session) -> dict[str, int] | None:
+    """Import a few orders, including one that lands in the exception queue.
+
+    Runs through the real import pipeline, so the resulting ledger rows,
+    reservations and exception records are exactly what production would produce.
+    """
+    existing = session.scalar(select(func.count()).select_from(SalesOrder)) or 0
+    if existing:
+        return None
+
+    payloads = [
+        OrderIn(
+            channel_code=channel_code,
+            shop_code=shop_code,
+            channel_order_no=order_no,
+            buyer_nick=buyer,
+            items=[
+                OrderItemIn(
+                    channel_product_code=code, quantity=qty, unit_price_cents=price_yuan * 100
+                )
+                for code, qty, price_yuan in items
+            ],
+        )
+        for channel_code, shop_code, order_no, items, buyer in DEMO_ORDERS
+    ]
+
+    result = order_import_service.import_orders(
+        session,
+        ParsedImport(orders=payloads),
+        source=OrderSource.IMPORT_JSON,
+        filename="seed-demo-orders.json",
+        operator_id=None,
+    )
+    return {
+        "created": result.created_orders,
+        "reserved": result.reserved_orders,
+        "exception": result.exception_orders,
+    }
+
+
 def main() -> None:
     init_db()
     session = SessionLocal()
@@ -213,9 +352,20 @@ def main() -> None:
         sku_ids = _ensure_skus(session, spu_ids)
         _ensure_bundle(session, sku_ids)
         _seed_opening_stock(session, sku_ids, warehouse_ids)
+        _ensure_channels(session)
+        mapping_count = _ensure_mappings(session, sku_ids)
+        order_stats = _ensure_demo_orders(session)
 
         print("种子数据已写入：")
-        print(f"  仓库 {len(WAREHOUSES)} 个 · SPU {len(SPUS)} 个 · SKU {len(sku_ids)} 个")
+        print(
+            f"  仓库 {len(WAREHOUSES)} 个 · SPU {len(SPUS)} 个 · SKU {len(sku_ids)} 个 · "
+            f"渠道 {len(CHANNELS)} 个 · 渠道商品映射 {mapping_count} 条"
+        )
+        if order_stats:
+            print(
+                f"  演示订单 {order_stats['created']} 笔"
+                f"（已占用 {order_stats['reserved']} · 异常 {order_stats['exception']}）"
+            )
         print(f"  数据库 {settings.DATABASE_URL}")
         print("  演示账号（仅本地使用）：")
         for username, password, role, _name in DEMO_USERS:
