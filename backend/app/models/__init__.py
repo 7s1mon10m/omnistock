@@ -41,6 +41,16 @@ from app.models.shipment import (
     ShipmentItemStatus,
     ShipmentStatus,
 )
+from app.models.purchase import (
+    PurchaseOrder,
+    PurchaseOrderItem,
+    PurchaseOrderStatus,
+    PurchaseReceipt,
+    PurchaseReceiptItem,
+    ReceiptStatus,
+)
+from app.models.supplier import Supplier
+from app.models.transfer import StockTransfer, StockTransferItem, TransferStatus
 from app.models.user import RefreshToken, User, UserStatus
 from app.models.warehouse import Warehouse, WarehouseLocation, WarehouseType
 
@@ -63,6 +73,12 @@ __all__ = [
     "Permission",
     "PickRecord",
     "PickResult",
+    "PurchaseOrder",
+    "PurchaseOrderItem",
+    "PurchaseOrderStatus",
+    "PurchaseReceipt",
+    "PurchaseReceiptItem",
+    "ReceiptStatus",
     "RefreshToken",
     "Role",
     "SalesOrder",
@@ -78,9 +94,14 @@ __all__ = [
     "Spu",
     "SpuStatus",
     "SpuType",
+    "StockTransfer",
+    "StockTransferItem",
+"StockTransferItem",
+    "Supplier",
     "SyncResult",
     "TimestampMixin",
-    "User",
+    "TransferStatus",
+"User",
     "UserStatus",
     "Warehouse",
     "WarehouseLocation",
