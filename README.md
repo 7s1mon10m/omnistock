@@ -61,7 +61,9 @@ SPU（纯棉短袖）
 
 ---
 
-## 已实现功能（M1 · 商品与库存基础）
+## 已实现功能
+
+### M1 · 商品与库存基础
 
 - **商品分层管理**：SPU / SKU / 组合商品，规格、条码、重量、包装规格、采购价、安全库存
 - **多渠道归一的基础**：内部 SKU 编码体系（`SKU-<SPU>-<规格>`，中文规格自动回退序号）
@@ -73,7 +75,21 @@ SPU（纯棉短袖）
 - **RBAC**：店主 / 运营 / 采购 / 仓库 + 系统管理员，五角色权限矩阵
 - **认证**：JWT（access + refresh 轮转）、登录失败锁定、密码 PBKDF2-HMAC-SHA256
 
-### 接口一览（M1）
+### M2 · 电商订单处理
+
+- **渠道与店铺**：淘宝 / 抖音 / Shopify 等平台，一个渠道下可挂多个店铺
+- **渠道商品映射**：`TB-100238`、`DY-883021`、`SHOP-TS-001` 三个平台编码统一映射到同一个内部 SKU，共享同一池库存
+- **订单导入**：CSV 上传 + JSON 请求体，同一 `(渠道, 店铺, 渠道单号)` 的多行自动合并成一张订单
+- **容错解析**：单行出错只跳过该行并回报行号，不影响文件里其他行；自动识别 Excel 的 BOM 与 GB18030
+- **幂等同步**：`(渠道, 渠道单号)` 唯一约束 + 同步日志，重复推送记为 `duplicate`，绝不二次扣减库存
+- **订单状态机**：待支付 → 待配货 → 已占用库存（→ 拣货 → 发货 → 完成）/ 异常 / 已取消
+- **库存占用**：导入已付款订单即刻占用；缺货默认整单不占用并转入异常队列（可配置为部分占用）
+- **异常订单闭环**：补货后点「重新占用」补齐缺口，无需重新导入订单
+- **取消释放**：取消订单按**库存流水**反算释放量，即使组合商品定义后来变了也释放得准确
+- **组合商品拆解**：买套装占用的是拆解后的子 SKU，套装自身永不持有库存
+- **可观测**：导入批次记录 + 每次同步结果（created / duplicate / failed）
+
+### 接口一览（M1 + M2）
 
 ```
 POST   /api/v1/auth/login | refresh | logout | change-password
@@ -101,6 +117,24 @@ POST   /api/v1/inventory/adjust      # 必填原因
 POST   /api/v1/inventory/reserve
 POST   /api/v1/inventory/release
 POST   /api/v1/inventory/reserve-bundle
+
+# --- M2 电商订单处理 ---
+GET    /api/v1/channels              POST /api/v1/channels
+GET    /api/v1/channels/{id}/shops   POST /api/v1/channels/{id}/shops
+GET    /api/v1/channel-products      POST /api/v1/channel-products
+PATCH  /api/v1/channel-products/{id} DELETE /api/v1/channel-products/{id}
+
+GET    /api/v1/orders                # 支持渠道 / 状态 / 关键字 / 只看异常
+GET    /api/v1/orders/{id}
+POST   /api/v1/orders/import          # 上传 CSV / JSON 文件
+POST   /api/v1/orders/import-json     # JSON 请求体导入
+GET    /api/v1/orders/import-template.csv
+GET    /api/v1/orders/import-batches  # 导入批次记录
+GET    /api/v1/orders/sync-logs       # 每次同步的结果（created / duplicate / failed）
+GET    /api/v1/orders/exceptions      # 异常订单队列
+POST   /api/v1/orders/{id}/mark-paid      # 待支付 → 占用库存
+POST   /api/v1/orders/{id}/retry-reserve  # 补货后重试占用
+POST   /api/v1/orders/{id}/cancel         # 取消并释放库存
 ```
 
 ---
@@ -166,7 +200,7 @@ docker compose --profile postgres up -d --build
 cd backend && python -m pytest tests -q
 ```
 
-M1 覆盖 **53 个用例**，重点覆盖：
+M1 + M2 共 **100 个用例**，重点覆盖：
 
 - 越权访问返回 `40301`，登录失败锁定，刷新令牌轮转
 - SPU / SKU 编码与条码唯一性冲突
@@ -176,6 +210,15 @@ M1 覆盖 **53 个用例**，重点覆盖：
 - 幂等键重复提交只扣一次库存
 - **20 个并发请求抢 10 件可售库存，恰好 10 个成功，绝不超卖**
 - 组合商品拆解占用、子项不足时**整单不占用**
+- 同一渠道订单重复导入 / 重放 4 次，库存只被占用一次
+- 两条渠道并发同步**同一张订单**，只创建一张、只占一次库存
+- CSV 单行损坏只跳过该行，其余照常导入并回报行号
+- 渠道商品编码未映射时只有该订单失败，不影响同文件其他订单
+- 缺货转异常 → 补货 → 重新占用成功；异常列表只反映最新一次尝试
+- 部分占用策略下先占能占的，缺口进异常
+- 取消订单按流水精确释放；取消后再同步同单号只记为重复
+- 两个平台并发下单抢同一池库存，先到先得、不超卖
+- 组合商品下单占用子 SKU，取消时精确释放
 
 ---
 
@@ -187,21 +230,22 @@ omnistock/
 │   ├── app/
 │   │   ├── core/          # 配置 / 安全 / 错误码 / 依赖 / 日志
 │   │   ├── db.py          # 引擎与会话
-│   │   ├── models/        # 14 张表：商品三层 / 仓库库位 / 库存与流水 / RBAC
+│   │   ├── models/        # 23 张表：商品三层 / 仓库库位 / 库存与流水 / 渠道订单 / RBAC
 │   │   ├── schemas/       # Pydantic 出入参
 │   │   ├── repositories/  # 数据访问（含条件 UPDATE 原子占用）
-│   │   ├── services/      # 业务逻辑
+│   │   ├── services/      # 业务逻辑：库存 / 商品 / 渠道 / 订单 / 导入
 │   │   ├── domain/        # 纯规则：可售公式 / 组合拆解计算
+│   │   ├── adapters/      # 渠道适配器：CSV / JSON（可插拔，M8 接真实平台 API）
 │   │   ├── api/v1/        # 路由与角色守卫
 │   │   ├── main.py
-│   │   └── seed.py        # 演示数据
-│   ├── alembic/versions/  # 0001 M1 迁移
-│   ├── tests/             # 53 个用例
+│   │   └── seed.py        # 演示数据（含渠道、映射与演示订单）
+│   ├── alembic/versions/  # 0001 M1 / 0002 M2 迁移
+│   ├── tests/             # 100 个用例
 │   └── requirements.txt
 ├── web/
 │   └── src/
 │       ├── api/           # 后端接口封装
-│       ├── views/         # 登录 / 商品 / SKU 详情 / 库存总览 / 组合商品 / 仓库
+│       ├── views/         # 订单 / 导入 / 异常 / 商品 / SKU / 库存 / 组合 / 仓库 / 渠道
 │       ├── components/    # 布局、库存流水表格
 │       ├── stores/        # Pinia
 │       └── types/
@@ -216,7 +260,7 @@ omnistock/
 | 里程碑 | 主题 | 状态 |
 | --- | --- | --- |
 | **M1** | 商品与库存基础 | ✅ 已完成 |
-| M2 | 电商订单处理（渠道映射 / 导入 / 占用 / 幂等 / 异常单） | 规划中 |
+| **M2** | 电商订单处理（渠道映射 / 导入 / 占用 / 幂等 / 异常单） | ✅ 已完成 |
 | M3 | 仓库发货（拣货 / 扫码 / 复核 / 打包 / 出库） | 规划中 |
 | M4 | 采购与收货（供应商 / 采购单 / 分批到货 / 质检入库） | 规划中 |
 | M5 | 多仓库调拨（申请 / 审批 / 在途 / 目标仓收货） | 规划中 |
