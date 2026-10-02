@@ -169,6 +169,34 @@ DEMO_ORDERS = [
     ("TB", "TB-SHOP-1", "TB202610020002", [("TB-100240", 500, 9900)], "赵*六"),
 ]
 
+# --------------------------------------------------------------------- M6 data
+# (name, scope, sku_code|None, warehouse_code|None, threshold)
+DEMO_ALERT_RULES = [
+    ("全局兜底阈值", "global", None, None, 10),
+]
+
+# --------------------------------------------------------------------- M7 data
+# 一张待质检的退货单：退 2 件，留给人在界面上做四路分流。
+DEMO_RETURN = {
+    "warehouse_code": "WH-MAIN",
+    "channel_order_no": "TB202610020001",
+    "items": [("TSHIRT-WHITE-L", 2)],
+}
+
+# 一张盘点中的单子：账面已冻结，实盘数留给人录入。
+DEMO_STOCKTAKE = {
+    "warehouse_code": "WH-MAIN",
+    "scope": "A 区",
+    "sku_codes": ["SHAMPOO-500", "TSHIRT-WHITE-L"],
+}
+
+# --------------------------------------------------------------------- M8 data
+# (channel code, adapter key, enabled)
+DEMO_ADAPTERS = [
+    ("TB", "taobao", True),
+    ("DY", "douyin", True),
+]
+
 
 def _ensure_users(session: Session) -> None:
     for username, password, role, full_name in DEMO_USERS:
@@ -533,6 +561,140 @@ def _ensure_demo_transfer(session: Session, sku_ids: dict[str, int], warehouse_i
     return transfer.transfer_no
 
 
+def _ensure_alert_rules(session: Session, sku_ids: dict[str, int]) -> int:
+    """一条全局兜底规则 + 一次扫描，让预警中心和补货建议一进来就有内容。"""
+    from app.repositories import alert_repo
+    from app.services import alert_service
+    from app.schemas.alert import AlertRuleIn
+
+    created = 0
+    for name, scope, sku_code, warehouse_code, threshold in DEMO_ALERT_RULES:
+        existing = [
+            row
+            for row in alert_repo.list_rules(session)
+            if row.name == name and row.scope.value == scope
+        ]
+        if existing:
+            continue
+        try:
+            alert_service.create_rule(
+                session,
+                AlertRuleIn(
+                    name=name,
+                    scope=scope,  # type: ignore[arg-type]
+                    sku_id=sku_ids.get(sku_code) if sku_code else None,
+                    warehouse_id=None,
+                    threshold_qty=threshold,
+                    enabled=True,
+                ),
+            )
+            created += 1
+        except BusinessError:
+            # 规则已存在（例如上一轮种子写过）——种子必须可重复执行。
+            session.rollback()
+    return created
+
+
+def _ensure_demo_return(session: Session, sku_ids: dict[str, int], warehouse_ids: dict[str, int]) -> str | None:
+    """一张待质检的退货单。质检结论留给人在界面上填，这样才看得出分流的作用。"""
+    from app.repositories import return_repo
+    from app.services import return_service
+    from app.schemas.return_order import ReturnOrderCreate, ReturnItemIn
+
+    warehouse_id = warehouse_ids[DEMO_RETURN["warehouse_code"]]
+    items = [
+        ReturnItemIn(sku_id=sku_ids[code], quantity=qty)
+        for code, qty in DEMO_RETURN["items"]
+    ]
+
+    existing = return_repo.list_returns(
+        session, keyword=DEMO_RETURN["channel_order_no"], page=1, page_size=20
+    )
+    if existing.total:
+        return existing.items[0].return_no
+
+    order = None
+    from app.repositories import order_repo
+
+    found = order_repo.list_orders(
+        session, keyword=DEMO_RETURN["channel_order_no"], page=1, page_size=20
+    )
+    if found.items:
+        order = found.items[0]
+
+    created = return_service.create(
+        session,
+        ReturnOrderCreate(
+            warehouse_id=warehouse_id,
+            order_id=order.id if order else None,
+            channel_order_no=DEMO_RETURN["channel_order_no"],
+            buyer_nick="张*三",
+            items=items,
+            reason="no_longer_wanted",
+        ),
+        operator_id=None,
+    )
+    return created.return_no
+
+
+def _ensure_demo_stocktake(session: Session, sku_ids: dict[str, int], warehouse_ids: dict[str, int]) -> str | None:
+    """一张盘点中的单子，账面已冻结，实盘数留给人录入。"""
+    from app.repositories import stocktake_repo
+    from app.services import stocktake_service
+    from app.schemas.stocktake import StocktakeCreate
+
+    warehouse_id = warehouse_ids[DEMO_STOCKTAKE["warehouse_code"]]
+    wanted = [sku_ids[code] for code in DEMO_STOCKTAKE["sku_codes"] if code in sku_ids]
+
+    listed = stocktake_repo.list_stocktakes(session, warehouse_id=warehouse_id, page=1, page_size=50)
+    for row in listed.items:
+        if row.status.value == "draft":
+            return row.stocktake_no
+
+    if not wanted:
+        return None
+
+    created = stocktake_service.create(
+        session,
+        StocktakeCreate(
+            warehouse_id=warehouse_id,
+            scope=DEMO_STOCKTAKE["scope"],
+            sku_ids=wanted,
+        ),
+        operator_id=None,
+    )
+    return created.stocktake_no
+
+
+def _ensure_demo_adapters(session: Session, channel_ids: dict[str, int]) -> int:
+    """给淘宝/抖音两个渠道各配一个适配器，让 M8 的配置页不是空的。"""
+    from app.models.channel_adapter import ChannelAdapter
+
+    created = 0
+    for channel_code, adapter_key, enabled in DEMO_ADAPTERS:
+        channel_id = channel_ids.get(channel_code)
+        if not channel_id:
+            continue
+        existing = session.scalar(
+            select(ChannelAdapter).where(ChannelAdapter.channel_id == channel_id)
+        )
+        if existing is not None:
+            continue
+        session.add(
+            ChannelAdapter(
+                channel_id=channel_id,
+                adapter_key=adapter_key,
+                enabled=enabled,
+                config={},
+                sync_interval_minutes=30,
+            )
+        )
+        created += 1
+    if created:
+        session.commit()
+    return created
+
+
 def main() -> None:
     init_db()
     session = SessionLocal()
@@ -553,6 +715,12 @@ def main() -> None:
         _ensure_suppliers(session)
         po_no = _ensure_demo_purchase(session, sku_ids, warehouse_ids)
         transfer_no = _ensure_demo_transfer(session, sku_ids, warehouse_ids)
+        channel_ids = _ensure_channels(session)
+        # M6–M8：预警规则与扫描、退货单、盘点单、渠道适配器
+        rule_count = _ensure_alert_rules(session, sku_ids)
+        return_no = _ensure_demo_return(session, sku_ids, warehouse_ids)
+        stocktake_no = _ensure_demo_stocktake(session, sku_ids, warehouse_ids)
+        adapter_count = _ensure_demo_adapters(session, channel_ids)
 
         print("种子数据已写入：")
         print(
@@ -572,6 +740,14 @@ def main() -> None:
             print(f"  演示采购单 {po_no}（状态：部分到货，首批含 5 件次品）")
         if transfer_no:
             print(f"  演示调拨单 {transfer_no}（状态：待审批）")
+        if rule_count:
+            print(f"  预警规则 {rule_count} 条（扫描后可在预警中心查看）")
+        if return_no:
+            print(f"  演示退货单 {return_no}（状态：待质检，可练四路分流）")
+        if stocktake_no:
+            print(f"  演示盘点单 {stocktake_no}（状态：盘点中，实盘数待录入）")
+        if adapter_count:
+            print(f"  渠道适配器 {adapter_count} 条（淘宝 / 抖音）")
         print(f"  数据库 {settings.DATABASE_URL}")
         print("  演示账号（仅本地使用）：")
         for username, password, role, _name in DEMO_USERS:

@@ -105,6 +105,49 @@ class Settings(BaseSettings):
     # 收货时允许出现次品的比例上限（%），用于验收把关；0 表示不限制
     TRANSFER_MAX_DEFECTIVE_PERCENT: int = 0
 
+    # --------------------------------------------------- alerts & notify (M6)
+    # 销量预测回看窗口：日均销量按这个天数取平均，窗口内没有出库即视为无销量。
+    FORECAST_WINDOW_DAYS: int = 30
+    # 补货周期：预测销量 = 日均销量 × 这个天数，代表「下次到货之前要卖掉的量」。
+    REPLENISH_LEAD_TIME_DAYS: int = 7
+    # 定时扫描的 cron 表达式，供外部调度器（cron / systemd timer）使用。
+    ALERT_SCAN_CRON: str = "0 8 * * *"
+    ALERT_CODE_PREFIX: str = "AL"
+    # 默认启用的通知通道，逗号分隔：inapp / email / webhook
+    NOTIFY_CHANNELS: str = "inapp"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+    SMTP_USE_TLS: bool = True
+    WEBHOOK_TIMEOUT_SECONDS: int = 10
+    # 投递失败的重试次数与退避基数（2/4/8/16 秒由它推算）。
+    NOTIFY_MAX_RETRIES: int = 4
+    NOTIFY_RETRY_BASE_SECONDS: int = 2
+
+    # ---------------------------------------------- returns & stocktake (M7)
+    RETURN_CODE_PREFIX: str = "RT"
+    STOCKTAKE_CODE_PREFIX: str = "ST"
+    # 退货窗口：超过这个天数的原订单不允许再建退货单（0 表示不限制）。
+    RETURN_WINDOW_DAYS: int = 30
+    # 盘点差异数量超过这个绝对值就必须走审核，不能直接调整。
+    STOCKTAKE_VARIANCE_THRESHOLD: int = 1
+    # 盘点是否需要审核才能落账。小团队可以关掉，直接生效。
+    STOCKTAKE_REQUIRE_APPROVAL: bool = True
+    # 质检判为报损时是否直接生成报损流水。
+    DAMAGE_AUTO_SCRAP: bool = True
+
+    # ---------------------------------------------- reports & adapters (M8)
+    # 报表不传日期范围时的默认回看天数。
+    REPORT_DEFAULT_RANGE_DAYS: int = 30
+    # 导出 CSV 的行数上限，超过直接报错而不是把内存打满。
+    EXPORT_MAX_ROWS: int = 50_000
+    EXPORT_CSV_DELIMITER: str = ","
+    AUDIT_LOG_RETENTION_DAYS: int = 180
+    # 渠道适配器同步间隔（分钟），供外部调度器参考。
+    ADAPTER_SYNC_INTERVAL_MINUTES: int = 30
+
     # ----------------------------------------------------------------- logging
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = False

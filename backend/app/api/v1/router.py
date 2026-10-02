@@ -3,14 +3,22 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    alerts,
     auth,
     bundles,
+    channel_adapters,
     channels,
+    exports,
+    audit_logs,
     inventory,
+    notifications,
     orders,
     products,
     purchase,
+    reports,
+    return_orders,
     shipments,
+    stocktakes,
     suppliers,
     transfers,
     users,
@@ -35,3 +43,15 @@ api_router.include_router(shipments.router)
 api_router.include_router(suppliers.router)
 api_router.include_router(purchase.router)
 api_router.include_router(transfers.router)
+# alerts declares /alerts/scan before /alerts/{alert_id}/... and
+# notifications declares /settings/... first, for the same literal-path reason.
+api_router.include_router(alerts.router)
+api_router.include_router(notifications.router)
+api_router.include_router(return_orders.router)
+api_router.include_router(stocktakes.router)
+api_router.include_router(reports.router)
+# exports declares /{report}.csv; audit logs and adapters have no parameter
+# routes to clash with.
+api_router.include_router(exports.router)
+api_router.include_router(audit_logs.router)
+api_router.include_router(channel_adapters.router)

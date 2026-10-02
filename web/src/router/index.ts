@@ -10,7 +10,7 @@ const router = createRouter({
       component: () => import('@/views/Login.vue'),
       meta: { public: true },
     },
-    { path: '/', redirect: '/orders' },
+    { path: '/', redirect: '/dashboard' },
     {
       path: '/orders',
       name: 'orders',
@@ -105,6 +105,74 @@ const router = createRouter({
       path: '/warehouses',
       name: 'warehouses',
       component: () => import('@/views/WarehouseManage.vue'),
+    },
+
+    // ------------------------------------------------------------ M6 预警
+    {
+      path: '/dashboard',
+      name: 'dashboard',
+      component: () => import('@/views/Dashboard.vue'),
+    },
+    {
+      path: '/alerts',
+      name: 'alerts',
+      component: () => import('@/views/AlertCenter.vue'),
+    },
+    {
+      path: '/alert-rules',
+      name: 'alert-rules',
+      component: () => import('@/views/AlertRules.vue'),
+    },
+    {
+      path: '/replenish',
+      name: 'replenish',
+      component: () => import('@/views/ReplenishSuggestions.vue'),
+    },
+    {
+      path: '/notifications',
+      name: 'notifications',
+      component: () => import('@/views/NotificationCenter.vue'),
+    },
+
+    // -------------------------------------------------------- M7 退货盘点
+    {
+      path: '/returns',
+      name: 'returns',
+      component: () => import('@/views/ReturnOrderList.vue'),
+    },
+    {
+      path: '/returns/:id',
+      name: 'return-detail',
+      component: () => import('@/views/ReturnDetail.vue'),
+      props: true,
+    },
+    {
+      path: '/stocktakes',
+      name: 'stocktakes',
+      component: () => import('@/views/StocktakeList.vue'),
+    },
+    {
+      path: '/stocktakes/:id',
+      name: 'stocktake-detail',
+      component: () => import('@/views/StocktakeDetail.vue'),
+      props: true,
+    },
+
+    // -------------------------------------------------------- M8 报表审计
+    {
+      path: '/reports',
+      name: 'reports',
+      component: () => import('@/views/ReportCenter.vue'),
+    },
+    {
+      path: '/channel-adapters',
+      name: 'channel-adapters',
+      component: () => import('@/views/ChannelAdapters.vue'),
+    },
+    {
+      path: '/audit-logs',
+      name: 'audit-logs',
+      component: () => import('@/views/AuditLogs.vue'),
     },
   ],
 })

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -33,10 +33,17 @@ def _extract_token(authorization: str | None) -> str:
 
 
 def get_current_user(
+    request: Request,
     session: DbSession,
     authorization: Annotated[str | None, Header()] = None,
 ) -> User:
-    """Resolve the caller from the ``Authorization: Bearer <jwt>`` header."""
+    """Resolve the caller from the ``Authorization: Bearer <jwt>`` header.
+
+    Also stamps ``request.state`` with the caller's id and name.  The audit
+    middleware runs *after* the response and therefore cannot see the return
+    value of this function — reading it back from ``request.state`` is the only
+    way for it to know who did what.
+    """
     import jwt
 
     token = _extract_token(authorization)
@@ -57,6 +64,8 @@ def get_current_user(
         raise BusinessError(AUTH_ACCOUNT_LOCKED, http_status=401)
     if user.status != UserStatus.ACTIVE:
         raise BusinessError(PERMISSION_DENIED, "账号未启用", http_status=403)
+    request.state.user_id = user.id
+    request.state.username = user.full_name or user.username
     return user
 
 

@@ -748,3 +748,534 @@ export interface StockTransfer extends TransferListItem {
   received_at: string | null
   items: TransferItem[]
 }
+
+// ============================================================ M6 预警与通知
+export type AlertRuleScope = 'global' | 'category' | 'sku' | 'warehouse'
+export type AlertType = 'low_stock' | 'out_of_stock'
+export type AlertStatus = 'open' | 'acked' | 'resolved'
+export type SuggestionStatus = 'open' | 'converted' | 'dismissed'
+export type NotificationChannel = 'inapp' | 'email' | 'webhook'
+export type NotificationLevel = 'info' | 'warning' | 'error'
+export type DeliveryStatus = 'pending' | 'sent' | 'retrying' | 'failed' | 'skipped'
+
+export const ALERT_SCOPE_LABELS: Record<AlertRuleScope, string> = {
+  global: '全局',
+  category: '按品类',
+  sku: '按 SKU',
+  warehouse: '按仓库',
+}
+
+export const ALERT_TYPE_LABELS: Record<AlertType, string> = {
+  low_stock: '低库存',
+  out_of_stock: '已断货',
+}
+
+export const ALERT_TYPE_TAG: Record<AlertType, string> = {
+  low_stock: 'warning',
+  out_of_stock: 'danger',
+}
+
+export const ALERT_STATUS_LABELS: Record<AlertStatus, string> = {
+  open: '待处理',
+  acked: '已知悉',
+  resolved: '已解决',
+}
+
+export const ALERT_STATUS_TAG: Record<AlertStatus, string> = {
+  open: 'danger',
+  acked: 'warning',
+  resolved: 'success',
+}
+
+export const SUGGESTION_STATUS_LABELS: Record<SuggestionStatus, string> = {
+  open: '待处理',
+  converted: '已转采购单',
+  dismissed: '已忽略',
+}
+
+export const DELIVERY_STATUS_LABELS: Record<DeliveryStatus, string> = {
+  pending: '待发送',
+  sent: '已送达',
+  retrying: '重试中',
+  failed: '失败',
+  skipped: '已跳过',
+}
+
+export const DELIVERY_STATUS_TAG: Record<DeliveryStatus, string> = {
+  pending: 'info',
+  sent: 'success',
+  retrying: 'warning',
+  failed: 'danger',
+  skipped: 'info',
+}
+
+export const NOTIFICATION_LEVEL_TAG: Record<NotificationLevel, string> = {
+  info: 'info',
+  warning: 'warning',
+  error: 'danger',
+}
+
+export interface AlertRule {
+  id: number
+  name: string
+  scope: AlertRuleScope
+  spu_id: number | null
+  spu_name: string
+  sku_id: number | null
+  sku_code: string
+  warehouse_id: number | null
+  warehouse_name: string
+  threshold_qty: number | null
+  enabled: boolean
+  notify_channels: string
+  remark: string
+  created_at: string | null
+}
+
+export interface AlertItem {
+  id: number
+  alert_no: string
+  type: AlertType
+  status: AlertStatus
+  rule_id: number | null
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  warehouse_id: number
+  warehouse_code: string
+  warehouse_name: string
+  available_qty: number
+  in_transit_qty: number
+  safety_qty: number
+  gap_qty: number
+  message: string
+  detected_at: string | null
+  acknowledged_by_name: string
+  acknowledged_at: string | null
+  resolved_at: string | null
+  created_at: string | null
+}
+
+export interface ScanResult {
+  scanned: number
+  alerts_created: number
+  alerts_skipped: number
+  resolved: number
+  suggestions_created: number
+  notifications_sent: number
+}
+
+export interface ReplenishSuggestion {
+  id: number
+  suggestion_no: string
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  warehouse_id: number
+  warehouse_code: string
+  warehouse_name: string
+  supplier_id: number | null
+  supplier_name: string
+  avg_daily_sales: number
+  forecast_qty: number
+  safety_qty: number
+  available_qty: number
+  in_transit_qty: number
+  suggested_qty: number
+  status: SuggestionStatus
+  purchase_order_id: number | null
+  generated_at: string | null
+  converted_at: string | null
+  remark: string
+  created_at: string | null
+}
+
+export interface NotificationDelivery {
+  id: number
+  channel: NotificationChannel
+  status: DeliveryStatus
+  endpoint: string
+  attempts: number
+  response_code: number | null
+  last_error: string
+  next_retry_at: string | null
+  sent_at: string | null
+  created_at: string | null
+}
+
+export interface NotificationItem {
+  id: number
+  title: string
+  body: string
+  level: NotificationLevel
+  category: string
+  ref_type: string
+  ref_id: number | null
+  recipient_id: number | null
+  is_read: boolean
+  read_at: string | null
+  created_at: string | null
+  deliveries: NotificationDelivery[]
+}
+
+export interface NotificationSetting {
+  id: number | null
+  channel: NotificationChannel
+  enabled: boolean
+  config: Record<string, unknown>
+  updated_at: string | null
+}
+
+// ============================================================ M7 退货与盘点
+export type ReturnStatus = 'pending' | 'inspected' | 'inbound' | 'cancelled'
+export type ReturnReason = 'quality' | 'wrong_item' | 'damaged' | 'no_longer_wanted' | 'other'
+export type ReturnDisposition = 'resellable' | 'defective' | 'repair' | 'scrap'
+export type StocktakeStatus = 'draft' | 'submitted' | 'approved' | 'cancelled'
+
+export const RETURN_STATUS_LABELS: Record<ReturnStatus, string> = {
+  pending: '待质检',
+  inspected: '已质检',
+  inbound: '已入库',
+  cancelled: '已取消',
+}
+
+export const RETURN_STATUS_TAG: Record<ReturnStatus, string> = {
+  pending: 'warning',
+  inspected: 'primary',
+  inbound: 'success',
+  cancelled: 'info',
+}
+
+export const RETURN_REASON_LABELS: Record<ReturnReason, string> = {
+  quality: '质量问题',
+  wrong_item: '发错货',
+  damaged: '运输破损',
+  no_longer_wanted: '无理由退货',
+  other: '其他',
+}
+
+export const DISPOSITION_LABELS: Record<ReturnDisposition, string> = {
+  resellable: '可再售',
+  defective: '次品',
+  repair: '待维修',
+  scrap: '报损',
+}
+
+export const DISPOSITION_TAG: Record<ReturnDisposition, string> = {
+  resellable: 'success',
+  defective: 'warning',
+  repair: 'primary',
+  scrap: 'danger',
+}
+
+export const STOCKTAKE_STATUS_LABELS: Record<StocktakeStatus, string> = {
+  draft: '盘点中',
+  submitted: '待审核',
+  approved: '已审核',
+  cancelled: '已取消',
+}
+
+export const STOCKTAKE_STATUS_TAG: Record<StocktakeStatus, string> = {
+  draft: 'warning',
+  submitted: 'primary',
+  approved: 'success',
+  cancelled: 'info',
+}
+
+export interface ReturnItem {
+  id: number
+  line_no: number
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  quantity: number
+  sold_qty: number
+  returnable_qty: number
+  already_returned_qty: number
+  disposition: ReturnDisposition | null
+  resellable_qty: number
+  defective_qty: number
+  repair_qty: number
+  scrap_qty: number
+  inspected_total: number
+  remark: string
+}
+
+export interface ReturnOrder {
+  id: number
+  return_no: string
+  order_id: number | null
+  channel_id: number | null
+  channel_name: string
+  channel_order_no: string
+  buyer_nick: string
+  warehouse_id: number
+  warehouse_code: string
+  warehouse_name: string
+  status: ReturnStatus
+  reason: ReturnReason
+  created_by: number | null
+  created_by_name: string
+  inspected_by_name: string
+  inspected_at: string | null
+  inbound_by_name: string
+  inbound_at: string | null
+  total_quantity: number
+  remark: string
+  items: ReturnItem[]
+  created_at: string | null
+}
+
+export interface ReturnListItem {
+  id: number
+  return_no: string
+  channel_order_no: string
+  buyer_nick: string
+  warehouse_name: string
+  status: ReturnStatus
+  reason: ReturnReason
+  total_quantity: number
+  created_at: string | null
+}
+
+export interface StocktakeLine {
+  id: number
+  line_no: number
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  barcode: string
+  book_qty: number
+  counted_qty: number | null
+  variance_qty: number
+  counted_by_name: string
+  counted_at: string | null
+  reason: string
+  adjusted: boolean
+  remark: string
+}
+
+export interface Stocktake {
+  id: number
+  stocktake_no: string
+  warehouse_id: number
+  warehouse_code: string
+  warehouse_name: string
+  status: StocktakeStatus
+  scope: string
+  created_by_name: string
+  submitted_by_name: string
+  submitted_at: string | null
+  approved_by_name: string
+  approved_at: string | null
+  remark: string
+  total_lines: number
+  counted_lines: number
+  variance_lines: number
+  total_variance: number
+  max_abs_variance: number
+  items: StocktakeLine[]
+  created_at: string | null
+}
+
+export interface StocktakeListItem {
+  id: number
+  stocktake_no: string
+  warehouse_name: string
+  status: StocktakeStatus
+  scope: string
+  total_lines: number
+  counted_lines: number
+  variance_lines: number
+  total_variance: number
+  created_at: string | null
+}
+
+// ============================================================ M8 报表与审计
+export interface SkuStockRow {
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  warehouse_id: number
+  warehouse_code: string
+  warehouse_name: string
+  on_hand_qty: number
+  reserved_qty: number
+  in_transit_qty: number
+  safety_qty: number
+  defective_qty: number
+  repair_qty: number
+  available_qty: number
+  location_code: string
+  stock_value_cents: number
+}
+
+export interface TurnoverRow {
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  period_days: number
+  sold_qty: number
+  avg_daily_sales: number
+  average_stock: number
+  turnover_days: number | null
+  on_hand_qty: number
+}
+
+export interface SupplierOnTimeRow {
+  supplier_id: number
+  supplier_name: string
+  total_batches: number
+  on_time_batches: number
+  late_batches: number
+  on_time_rate: number
+  avg_delay_days: number
+}
+
+export interface ChannelSalesRow {
+  bucket: string
+  channel_id: number
+  channel_code: string
+  channel_name: string
+  order_count: number
+  item_quantity: number
+  total_amount_cents: number
+}
+
+export interface StockoutRow {
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  stockout_count: number
+  shortage_qty: number
+  last_stockout_at: string | null
+}
+
+export interface ReturnRateRow {
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  sold_qty: number
+  returned_qty: number
+  return_rate: number
+  return_order_count: number
+}
+
+export interface SlowMovingRow {
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  warehouse_id: number
+  warehouse_code: string
+  on_hand_qty: number
+  stock_value_cents: number
+  idle_days: number
+}
+
+export interface PurchaseAmountRow {
+  bucket: string
+  supplier_id: number
+  supplier_name: string
+  order_count: number
+  total_amount_cents: number
+}
+
+export interface StocktakeVarianceRow {
+  warehouse_id: number
+  warehouse_code: string
+  warehouse_name: string
+  total_lines: number
+  variance_lines: number
+  gain_qty: number
+  loss_qty: number
+  net_qty: number
+  variance_amount_cents: number
+}
+
+export interface LowStockRow {
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  warehouse_id: number
+  warehouse_code: string
+  warehouse_name: string
+  available_qty: number
+  in_transit_qty: number
+  safety_qty: number
+  gap_qty: number
+}
+
+export interface DashboardSummary {
+  sku_count: number
+  warehouse_count: number
+  total_on_hand: number
+  total_available: number
+  total_stock_value_cents: number
+  open_orders: number
+  open_alerts: number
+  open_exceptions: number
+  pending_stocktakes: number
+  period_days: number
+  period_amount_cents: number
+  period_order_count: number
+  low_stock_count: number
+  supplier_count: number
+}
+
+export interface AuditLog {
+  id: number
+  actor_id: number | null
+  actor_name: string
+  action: string
+  resource_type: string
+  resource_id: string
+  method: string
+  path: string
+  status_code: number
+  ip: string
+  user_agent: string
+  request_id: string
+  summary: string
+  detail: Record<string, unknown>
+  created_at: string | null
+}
+
+export interface ChannelAdapter {
+  id: number
+  channel_id: number
+  channel_code: string
+  channel_name: string
+  adapter_key: string
+  enabled: boolean
+  config: Record<string, unknown>
+  sync_interval_minutes: number
+  last_sync_at: string | null
+  last_sync_status: string
+  last_sync_message: string
+  remark: string
+  created_at: string | null
+}
+
+export interface AdapterDescriptor {
+  key: string
+  name: string
+  kind: string
+  extensions: string[]
+  description: string
+}
+
+export interface AdapterSyncResult {
+  adapter_key: string
+  channel_id: number
+  result: string
+  message: string
+  created_orders: number
+  duplicate_orders: number
+  failed_rows: number
+  sync_log_id: number | null
+}
+
+export function fmtDate(value: string | null): string {
+  if (!value) return '-'
+  return value.replace('T', ' ').slice(0, 16)
+}

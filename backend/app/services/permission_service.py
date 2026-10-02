@@ -75,6 +75,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "pick:manage",
         "stocktake:read",
         "stocktake:manage",
+        "alert:read",
+        "replenish:read",
         "notification:read",
     ],
     "owner": [

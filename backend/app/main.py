@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import setup_logging
 from app.middlewares import RequestContextMiddleware
+from app.middlewares.audit_middleware import AuditMiddleware
 
 logger = logging.getLogger("app.startup")
 
@@ -57,7 +58,11 @@ def create_app() -> FastAPI:
 
     # Starlette inserts each new middleware at the front, so the middleware
     # added last ends up outermost. Desired order, outermost first:
-    #   RequestContext -> CORS -> routes
+    #   RequestContext -> CORS -> Audit -> routes
+    #
+    # Audit must sit inside CORS so preflight requests never reach it, and it
+    # needs RequestContext's request id to correlate with the access log.
+    app.add_middleware(AuditMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

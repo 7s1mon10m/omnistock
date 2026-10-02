@@ -545,6 +545,106 @@ def transfer_receive(
     )
 
 
+def return_inbound(
+    session: Session,
+    *,
+    sku_id: int,
+    warehouse_id: int,
+    resellable_qty: int = 0,
+    defective_qty: int = 0,
+    repair_qty: int = 0,
+    scrap_qty: int = 0,
+    location_id: int | None = None,
+    ref_id: int | None = None,
+    operator_id: int | None = None,
+    remark: str = "",
+    idempotency_key: str | None = None,
+) -> list[InventoryTransaction]:
+    """退货质检入库：四个结论走四条不同的账。
+
+    * 可再售 → 回到可售库存（``qty_delta`` 为正）
+    * 次品   → 进次品区（``qty_delta`` 为 0 —— 实际库存没变，变的是次品区）
+    * 维修   → 进维修区（同上）
+    * 报损   → 只留一条 ``damage_scrap`` 痕迹：这批货是客户退回来的，从未
+      回到我们的账面，报损就是说它**不会**回到账面
+
+    混成一条「退货入库」会让「实际库存」这个数字失去意义 —— 次品和维修品
+    都不该出现在可售里。
+    """
+    if min(resellable_qty, defective_qty, repair_qty, scrap_qty) < 0:
+        raise BusinessError(RECEIPT_QUANTITY_INVALID, "分流数量不能为负", http_status=400)
+    if resellable_qty + defective_qty + repair_qty + scrap_qty <= 0:
+        raise BusinessError(RECEIPT_QUANTITY_INVALID, "至少要有一个分流数量", http_status=400)
+
+    transactions: list[InventoryTransaction] = []
+
+    if resellable_qty:
+        transactions.append(
+            _apply(
+                session,
+                sku_id=sku_id,
+                warehouse_id=warehouse_id,
+                type_=InventoryTransactionType.RETURN_INBOUND,
+                qty_delta=resellable_qty,
+                location_id=location_id,
+                ref_type="return_order",
+                ref_id=ref_id,
+                operator_id=operator_id,
+                remark=remark or "退货入库（可再售）",
+                idempotency_key=f"{idempotency_key}:sellable" if idempotency_key else None,
+            )
+        )
+    if defective_qty:
+        transactions.append(
+            _apply(
+                session,
+                sku_id=sku_id,
+                warehouse_id=warehouse_id,
+                type_=InventoryTransactionType.RETURN_DEFECTIVE,
+                qty_delta=0,
+                defective_delta=defective_qty,
+                ref_type="return_order",
+                ref_id=ref_id,
+                operator_id=operator_id,
+                remark=remark or "退货入库（次品）",
+                idempotency_key=f"{idempotency_key}:defective" if idempotency_key else None,
+            )
+        )
+    if repair_qty:
+        transactions.append(
+            _apply(
+                session,
+                sku_id=sku_id,
+                warehouse_id=warehouse_id,
+                type_=InventoryTransactionType.RETURN_REPAIR,
+                qty_delta=0,
+                repair_delta=repair_qty,
+                ref_type="return_order",
+                ref_id=ref_id,
+                operator_id=operator_id,
+                remark=remark or "退货入库（待维修）",
+                idempotency_key=f"{idempotency_key}:repair" if idempotency_key else None,
+            )
+        )
+    if scrap_qty:
+        transactions.append(
+            _apply(
+                session,
+                sku_id=sku_id,
+                warehouse_id=warehouse_id,
+                type_=InventoryTransactionType.DAMAGE_SCRAP,
+                # 退回来的坏货从未回到账面，报损就是明确它不会回来了。
+                qty_delta=0,
+                ref_type="return_order",
+                ref_id=ref_id,
+                operator_id=operator_id,
+                remark=remark or "退货报损",
+                idempotency_key=f"{idempotency_key}:scrap" if idempotency_key else None,
+            )
+        )
+    return transactions
+
+
 def inbound(
     session: Session,
     *,

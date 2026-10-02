@@ -124,7 +124,35 @@ SPU（纯棉短袖）
 - **发出前可取消，发出后必须走完**：货一旦上路就不能取消，否则在途会变成黑洞
 - **整单一起发**：发出的每一行都会先校验可售，任何一行不够就整单不发
 
-### 接口一览（M1 – M5）
+### M6 · 库存预警
+
+- **安全库存规则**：全局 / 按品类 / 按 SKU / 按仓库四档，**范围越窄越优先**；没设阈值时沿用 SKU 自身的安全库存
+- **扫描去重**：`可售 + 在途 < 安全库存` 才告警；**同一 SKU 未解决前只保留一条**，补货到位后自动关闭
+- **在途算覆盖**：已下单在路上的货计入覆盖，所以「货在路上」不会误报
+- **补货建议**：`建议采购量 = 预测销量 + 安全库存 − 可售 − 在途`，结果不为负；**一键转采购单生成的是草稿**
+- **通知三通道**：站内 / 邮件（SMTP）/ Webhook，每条通知的**每次投递尝试**都单独留痕
+- **指数退避重试**：2 → 4 → 8 → 16 秒；4xx 立刻失败不重试，没配 SMTP 时邮件通道立刻报 `42402`
+- **站内始终可达**：外部通道坏掉也不会让人看不到低库存预警
+
+### M7 · 退货与盘点
+
+- **退货两步走**：**质检只记结论不动库存**，入库才落账 —— 质检结论可以反悔，不会把账做脏
+- **四路分流**：可再售回可售 / 次品进次品区 / 待维修进维修区 / 报损直接出账
+- **次品与维修永不进可售**：混成一条「退货入库」会让次品立刻变成能卖的货
+- **退货量校验**：不能超过「已售 − 已退」，超出返回 `40960`
+- **盘点差异必须审核**：提交只是「我盘完了」，**审核通过才写调整流水**，留操作人 / 时间 / 原因
+- **未审核不动库存**：这是盘点模块的底线，有专门用例守着
+
+### M8 · 报表与渠道适配
+
+- **经营看板**：在库 / 可售 / 库存金额 / 预警 / 异常 / 低库存等核心数字，附渠道销量与供应商及时率图表
+- **十张报表**：SKU 库存、周转天数、供应商及时率、渠道销量、缺货次数、退货率、滞销、采购金额、盘点差异、低库存清单
+- **统一口径**：净销量 = 出库 − 退货入库；零销量时周转天数是 `None`（卖不动）而不是 0（周转极快）
+- **CSV 导出**：带 **UTF-8 BOM**，Excel 双击打开不乱码；中文文件名用 RFC 5987 编码；超上限报错而非截断
+- **渠道适配器**：淘宝 / 抖音字段映射（淘宝金额是「元」字符串、抖音是「分」整数），**渠道身份由配置给出**
+- **审计日志**：自动记录成功的写操作，支持按人 / 动作 / 资源检索，**只读，没有也不该有改删接口**
+
+### 接口一览（M1 – M8）
 
 ```
 POST   /api/v1/auth/login | refresh | logout | change-password
@@ -202,6 +230,43 @@ POST   /api/v1/transfers/{id}/reject    # 审批驳回
 POST   /api/v1/transfers/{id}/ship      # 调出仓发出 → 进入在途
 POST   /api/v1/transfers/{id}/receive   # 调入仓收货 → 在途转实际
 POST   /api/v1/transfers/{id}/cancel    # 仅未发出可取消
+
+# M6 预警与通知
+GET/PUT  /api/v1/alert-rules            POST /api/v1/alert-rules   DELETE /api/v1/alert-rules/{id}
+GET      /api/v1/alerts                 # 支持 status / type / warehouse / sku 过滤
+POST     /api/v1/alerts/scan            # 手动触发一次扫描
+POST     /api/v1/alerts/{id}/ack        POST /api/v1/alerts/{id}/resolve
+GET      /api/v1/replenishment-suggestions
+POST     /api/v1/replenishment-suggestions/generate
+POST     /api/v1/replenishment-suggestions/{id}/dismiss
+POST     /api/v1/replenishment-suggestions/{id}/to-purchase-order
+GET      /api/v1/notifications          GET /api/v1/notifications/unread-count
+POST     /api/v1/notifications/{id}/read    POST /api/v1/notifications/read-all
+GET      /api/v1/notifications/settings/all  PUT /api/v1/notifications/settings/{channel}
+
+# M7 退货与盘点
+GET/POST /api/v1/return-orders
+GET      /api/v1/return-orders/{id}
+POST     /api/v1/return-orders/{id}/inspect   # 质检分流（不动库存）
+POST     /api/v1/return-orders/{id}/inbound   # 入库（此时才动库存）
+POST     /api/v1/return-orders/{id}/cancel
+GET/POST /api/v1/stocktakes             GET /api/v1/stocktakes/{id}
+POST     /api/v1/stocktakes/{id}/counts       # 批量录入实盘数
+POST     /api/v1/stocktakes/{id}/scan         # 扫码录入
+POST     /api/v1/stocktakes/{id}/submit       # 提交（仍不动库存）
+POST     /api/v1/stocktakes/{id}/approve      # 审核（此时才落账）
+POST     /api/v1/stocktakes/{id}/cancel
+
+# M8 报表与渠道适配
+GET  /api/v1/reports/dashboard
+GET  /api/v1/reports/sku-stock | turnover | supplier-ontime | channel-sales
+GET  /api/v1/reports/stockout | return-rate | slow-moving | purchase-amount
+GET  /api/v1/reports/stocktake-variance | low-stock
+GET  /api/v1/exports/{report}.csv       # 带 BOM，Excel 可直接打开
+GET  /api/v1/audit-logs                 # 只读
+GET  /api/v1/channel-adapters/descriptors
+GET/POST /api/v1/channel-adapters       PUT /api/v1/channel-adapters/{id}
+POST /api/v1/channel-adapters/{id}/sync
 ```
 
 ---
@@ -267,7 +332,7 @@ docker compose --profile postgres up -d --build
 cd backend && python -m pytest tests -q
 ```
 
-M1 – M5 共 **189 个用例**，重点覆盖：
+M1 – M8 共 **324 个用例**，重点覆盖：
 
 - 越权访问返回 `40301`，登录失败锁定，刷新令牌轮转
 - SPU / SKU 编码与条码唯一性冲突
@@ -300,6 +365,20 @@ M1 – M5 共 **189 个用例**，重点覆盖：
 - 分批收货：没收完的继续挂在在途，全部收齐才结单
 - 已发出的调拨不能取消（否则在途变黑洞）
 - 源仓可售不足时**整单不发**，任何一侧的库存都不动
+- 补货公式：在途要扣减、结果为负时不生成建议（纯函数单测）
+- 扫描 5 次只产生 1 条预警；补货到位后自动关闭，再次缺货能重新告警
+- 建议转采购单生成的是**草稿**；转换后去重键释放，下一轮可重新评估
+- 退 6 件按 3/1/1/1 四路分流：可售只 +3，次品 +1，维修 +1，报损不入账
+- 整批次品时，可售库存**一点都不许变**
+- 盘点提交后库存不变；审核后才写调整流水且留下操作人
+- 盘点重复审核返回 `40961`；已审核的盘点不能取消
+- 周转天数 = 平均库存 / 日均销量，零销量时是 `None` 而不是 0
+- 退货后净销量减少（净销量 = 出库 − 退货入库），退货率按此计算
+- 供应商及时率：**没有预计到货日的采购单不计入分母**
+- 导出带 BOM、中文文件名用 `filename*`；超过上限报错而非截断
+- 写操作必留审计，审计接口只读（`PUT`/`DELETE` 均 405），登录不进审计
+- 淘宝金额「元」字符串转分、抖音「分」直接采用
+- 渠道适配器重复同步同一批订单，库存**只占用一次**
 
 ---
 
@@ -311,22 +390,28 @@ omnistock/
 │   ├── app/
 │   │   ├── core/          # 配置 / 安全 / 错误码 / 依赖 / 日志
 │   │   ├── db.py          # 引擎与会话
-│   │   ├── models/        # 33 张表：商品 / 仓库库位 / 库存流水 / 渠道订单 / 发货拣货 / 采购收货 / 调拨 / RBAC
+│   │   ├── models/        # 44 张表：商品 / 仓库库位 / 库存流水 / 渠道订单 / 发货拣货 /
+│   │   │                  #   采购收货 / 调拨 / 预警通知 / 退货盘点 / 审计 / 适配器 / RBAC
 │   │   ├── schemas/       # Pydantic 出入参
 │   │   ├── repositories/  # 数据访问（占用 / 出库 / 拣货均为条件 UPDATE 原子操作）
-│   │   ├── services/      # 业务逻辑：库存 / 商品 / 渠道 / 订单 / 导入 / 发货 / 采购 / 调拨
-│   │   ├── domain/        # 纯规则：可售公式 / 组合拆解计算
-│   │   ├── adapters/      # 渠道适配器：CSV / JSON（可插拔，M8 接真实平台 API）
+│   │   ├── services/      # 业务逻辑：库存 / 商品 / 渠道 / 订单 / 导入 / 发货 / 采购 /
+│   │   │                  #   调拨 / 预警 / 补货 / 通知 / 退货 / 盘点 / 报表 / 导出 / 审计
+│   │   ├── domain/        # 纯规则：可售公式 / 组合拆解 / 补货公式 / 退货状态机
+│   │   ├── adapters/      # 渠道适配器：CSV / JSON（文件）+ 淘宝 / 抖音（平台 API）
+│   │   ├── middlewares/   # 请求上下文 / 审计留痕
+│   │   ├── tasks/         # 后台入口：预警扫描、通知重试
 │   │   ├── api/v1/        # 路由与角色守卫
 │   │   ├── main.py
-│   │   └── seed.py        # 演示数据（含渠道、订单、拣货单、采购单与调拨单）
-│   ├── alembic/versions/  # 0001 M1 … 0005 M5
-│   ├── tests/             # 189 个用例
+│   │   └── seed.py        # 演示数据（含渠道、订单、拣货单、采购单、调拨单、
+│   │                      #   预警规则、退货单、盘点单与渠道适配器）
+│   ├── alembic/versions/  # 0001 M1 … 0008 M8
+│   ├── tests/             # 324 个用例
 │   └── requirements.txt
 ├── web/
 │   └── src/
 │       ├── api/           # 后端接口封装
-│       ├── views/         # 订单 / 拣货发货 / 采购收货 / 调拨 / 商品 / 库存 / 渠道 / 仓库
+│       ├── views/         # 看板 / 订单 / 拣货发货 / 采购收货 / 调拨 / 商品 / 库存 /
+│       │                  #   渠道 / 仓库 / 退货 / 盘点 / 预警 / 补货 / 通知 / 报表 / 审计
 │       ├── components/    # 布局、库存流水表格
 │       ├── stores/        # Pinia
 │       └── types/
@@ -345,9 +430,9 @@ omnistock/
 | **M3** | 仓库发货（拣货 / 扫码 / 复核 / 打包 / 出库） | ✅ 已完成 |
 | **M4** | 采购与收货（供应商 / 采购单 / 分批到货 / 质检入库） | ✅ 已完成 |
 | **M5** | 多仓库调拨（申请 / 审批 / 在途 / 目标仓收货） | ✅ 已完成 |
-| M6 | 库存预警（安全库存 / 补货建议 / 通知） | 规划中 |
-| M7 | 退货与盘点（质检分流 / 盘点差异审核） | 规划中 |
-| M8 | 报表与渠道适配（经营报表 / CSV 导出 / 适配器 / 审计） | 规划中 |
+| **M6** | 库存预警（安全库存 / 补货建议 / 通知） | ✅ 已完成 |
+| **M7** | 退货与盘点（质检分流 / 盘点差异审核） | ✅ 已完成 |
+| **M8** | 报表与渠道适配（经营报表 / CSV 导出 / 适配器 / 审计） | ✅ 已完成 |
 
 每个里程碑都围绕一个完整需求闭环：数据库迁移、后端接口、前端页面、后台任务、权限、错误处理、测试一起完成。
 

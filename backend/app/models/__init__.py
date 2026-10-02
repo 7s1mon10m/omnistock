@@ -4,12 +4,31 @@ Importing this package registers every table on ``Base.metadata``, which is what
 Alembic and ``init_db`` rely on.
 """
 
+from app.models.alert import (
+    Alert,
+    AlertRule,
+    AlertRuleScope,
+    AlertStatus,
+    AlertType,
+    ReplenishmentSuggestion,
+    SuggestionStatus,
+)
+from app.models.audit import AuditLog
 from app.models.base import SoftDeleteMixin, TimestampMixin, enum_type, utcnow
 from app.models.channel import Channel, ChannelPlatform, ChannelProduct, ChannelShop
+from app.models.channel_adapter import AdapterSyncStatus, ChannelAdapter
 from app.models.inventory import (
     InventoryStock,
     InventoryTransaction,
     InventoryTransactionType,
+)
+from app.models.notification import (
+    DeliveryStatus,
+    Notification,
+    NotificationChannel,
+    NotificationDelivery,
+    NotificationLevel,
+    NotificationSetting,
 )
 from app.models.order import (
     ExceptionStatus,
@@ -32,6 +51,21 @@ from app.models.product import (
     SpuStatus,
     SpuType,
 )
+from app.models.purchase import (
+    PurchaseOrder,
+    PurchaseOrderItem,
+    PurchaseOrderStatus,
+    PurchaseReceipt,
+    PurchaseReceiptItem,
+    ReceiptStatus,
+)
+from app.models.return_order import (
+    ReturnDisposition,
+    ReturnOrder,
+    ReturnOrderItem,
+    ReturnReason,
+    ReturnStatus,
+)
 from app.models.role import Permission, Role, role_permissions, user_roles
 from app.models.shipment import (
     PickRecord,
@@ -41,31 +75,38 @@ from app.models.shipment import (
     ShipmentItemStatus,
     ShipmentStatus,
 )
-from app.models.purchase import (
-    PurchaseOrder,
-    PurchaseOrderItem,
-    PurchaseOrderStatus,
-    PurchaseReceipt,
-    PurchaseReceiptItem,
-    ReceiptStatus,
-)
+from app.models.stocktake import Stocktake, StocktakeItem, StocktakeStatus
 from app.models.supplier import Supplier
 from app.models.transfer import StockTransfer, StockTransferItem, TransferStatus
 from app.models.user import RefreshToken, User, UserStatus
 from app.models.warehouse import Warehouse, WarehouseLocation, WarehouseType
 
 __all__ = [
+    "AdapterSyncStatus",
+    "Alert",
+    "AlertRule",
+    "AlertRuleScope",
+    "AlertStatus",
+    "AlertType",
+    "AuditLog",
     "BundleComponent",
     "Channel",
+    "ChannelAdapter",
     "ChannelPlatform",
     "ChannelProduct",
     "ChannelShop",
+    "DeliveryStatus",
     "ExceptionStatus",
     "ExceptionType",
     "ImportBatch",
     "InventoryStock",
     "InventoryTransaction",
     "InventoryTransactionType",
+    "Notification",
+    "NotificationChannel",
+    "NotificationDelivery",
+    "NotificationLevel",
+    "NotificationSetting",
     "OrderException",
     "OrderSource",
     "OrderStatus",
@@ -80,6 +121,12 @@ __all__ = [
     "PurchaseReceiptItem",
     "ReceiptStatus",
     "RefreshToken",
+    "ReplenishmentSuggestion",
+    "ReturnDisposition",
+    "ReturnOrder",
+    "ReturnOrderItem",
+    "ReturnReason",
+    "ReturnStatus",
     "Role",
     "SalesOrder",
     "SalesOrderItem",
@@ -96,12 +143,15 @@ __all__ = [
     "SpuType",
     "StockTransfer",
     "StockTransferItem",
-"StockTransferItem",
+    "Stocktake",
+    "StocktakeItem",
+    "StocktakeStatus",
+    "SuggestionStatus",
     "Supplier",
     "SyncResult",
     "TimestampMixin",
     "TransferStatus",
-"User",
+    "User",
     "UserStatus",
     "Warehouse",
     "WarehouseLocation",

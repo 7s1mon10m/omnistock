@@ -25,7 +25,10 @@ class OrderItemIn(BaseModel):
 class OrderIn(BaseModel):
     """One order as it arrives from a channel export."""
 
-    channel_code: str = Field(min_length=1, max_length=32)
+    # 允许为空：平台 API 的响应里通常没有「我们内部怎么称呼这个渠道」，
+    # 渠道适配器同步时会用配置里的渠道编码补上。留空由导入流程给出明确报错，
+    # 好过让适配器去猜一个 shop 名称把渠道映射做错。
+    channel_code: str = Field(default="", max_length=32)
     shop_code: str | None = Field(default=None, max_length=32)
     channel_order_no: str = Field(min_length=1, max_length=64)
     buyer_nick: str = Field(default="", max_length=64)

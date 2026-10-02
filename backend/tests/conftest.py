@@ -36,8 +36,8 @@ from app.services import permission_service  # noqa: E402
 API = "/api/v1"
 DEFAULT_PASSWORD = "Passw0rd!"
 
-#: The only migration M1 ships.
-HEAD_REVISION = "0001"
+#: The latest migration; bumped whenever a milestone adds tables.
+HEAD_REVISION = "0008"
 
 
 def _stamp_head_revision() -> None:
@@ -574,3 +574,173 @@ def inventory_row_or_zero(
         if row["sku_id"] == sku_id and row["warehouse_id"] == warehouse_id:
             return row
     return dict(ZERO_STOCK)
+
+
+# ---------------------------------------------------- M6: alerts & replenish
+def create_alert_rule(
+    client: TestClient, headers: dict[str, str], **overrides
+) -> Response:
+    payload = {"name": "测试规则", "scope": "global", "threshold_qty": 10}
+    payload.update(overrides)
+    return client.post(f"{API}/alert-rules", json=payload, headers=headers)
+
+
+def ensure_alert_rule(
+    client: TestClient, headers: dict[str, str], **overrides
+):
+    """Create an alert rule, or return the existing one for that scope+target.
+
+    The global scope admits exactly one rule per database and tests share a
+    database, so anything that just needs "some rule must exist" has to go
+    through here instead of :func:`create_alert_rule`.
+    """
+    payload = {"name": "测试规则", "scope": "global", "threshold_qty": 10}
+    payload.update(overrides)
+
+    listed = client.get(f"{API}/alert-rules", headers=headers).json()
+    for row in listed:
+        if (
+            row["scope"] == payload["scope"]
+            and row.get("sku_id") == payload.get("sku_id")
+            and row.get("warehouse_id") == payload.get("warehouse_id")
+            and row.get("spu_id") == payload.get("spu_id")
+        ):
+            return row
+
+    response = create_alert_rule(client, headers, **overrides)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def scan_alerts(client: TestClient, headers: dict[str, str], **params) -> dict:
+    response = client.post(f"{API}/alerts/scan", headers=headers, params=params)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def list_alerts(
+    client: TestClient, headers: dict[str, str], **params
+) -> dict:
+    return client.get(f"{API}/alerts", headers=headers, params=params).json()
+
+
+def ack_alert(client: TestClient, headers: dict[str, str], alert_id: int, **extra) -> Response:
+    return client.post(f"{API}/alerts/{alert_id}/ack", json=extra, headers=headers)
+
+
+def generate_suggestions(
+    client: TestClient, headers: dict[str, str], **params
+) -> list[dict]:
+    response = client.post(
+        f"{API}/replenishment-suggestions/generate", headers=headers, params=params
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def to_purchase_order(
+    client: TestClient, headers: dict[str, str], suggestion_id: int, **extra
+) -> Response:
+    return client.post(
+        f"{API}/replenishment-suggestions/{suggestion_id}/to-purchase-order",
+        json=extra,
+        headers=headers,
+    )
+
+
+def deliveries_of(
+    client: TestClient, headers: dict[str, str], notification_id: int
+) -> list[dict]:
+    listed = client.get(
+        f"{API}/notifications?page_size=200", headers=headers
+    ).json()["items"]
+    for row in listed:
+        if row["id"] == notification_id:
+            return row["deliveries"]
+    raise AssertionError(f"no notification {notification_id}")
+
+
+@pytest.fixture()
+def low_stock(client, owner_headers):
+    """A warehouse + SKU with safety 20 and 25 on hand.
+
+    可售 = 25 - 0 - 20 = 5，落在 (0, 安全库存) 区间，也就是「还能卖但快没了」。
+    这里刻意让可售保持为正：可售跌到负数说明实际库存已经低于安全线，那属于
+    另一条更严重的 out_of_stock 判定，由专门的用例覆盖。
+    """
+    tag = uniq("ALERT")
+    warehouse = create_warehouse(client, owner_headers, name=f"预警仓{tag}", code=f"WH-{tag}")
+    spu = create_spu(client, owner_headers, f"SPU-{tag}", "预警商品")
+    sku = create_sku(
+        client, owner_headers, spu["id"], sku_code=f"SKU-{tag}", safety_qty=20
+    )
+    adjust_stock(client, owner_headers, sku["id"], warehouse["id"], 25, "少量备货")
+    return {
+        "warehouse": warehouse,
+        "spu": spu,
+        "sku": sku,
+        "tag": tag,
+        "headers": owner_headers,
+    }
+
+
+@pytest.fixture()
+def wh(low_stock) -> int:
+    """当前 low_stock 仓库的 id（让扫描用例只扫自己的仓）。"""
+    return low_stock["warehouse"]["id"]
+
+
+@pytest.fixture()
+def sku_id(low_stock) -> int:
+    return low_stock["sku"]["id"]
+
+
+# -------------------------------------------------- M7: returns & stocktakes
+def create_return(
+    client: TestClient, headers: dict[str, str], warehouse_id: int, items: list[dict], **extra
+) -> Response:
+    return client.post(
+        f"{API}/return-orders",
+        json={"warehouse_id": warehouse_id, "items": items, **extra},
+        headers=headers,
+    )
+
+
+def inspect_return(
+    client: TestClient, headers: dict[str, str], return_id: int, items: list[dict], **extra
+) -> Response:
+    return client.post(
+        f"{API}/return-orders/{return_id}/inspect", json={"items": items, **extra}, headers=headers
+    )
+
+
+def inbound_return(client: TestClient, headers: dict[str, str], return_id: int) -> Response:
+    return client.post(f"{API}/return-orders/{return_id}/inbound", json={}, headers=headers)
+
+
+def get_return(client: TestClient, headers: dict[str, str], return_id: int) -> dict:
+    response = client.get(f"{API}/return-orders/{return_id}", headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def create_stocktake(
+    client: TestClient, headers: dict[str, str], warehouse_id: int, **extra
+) -> Response:
+    return client.post(
+        f"{API}/stocktakes", json={"warehouse_id": warehouse_id, **extra}, headers=headers
+    )
+
+
+def count_stocktake(
+    client: TestClient, headers: dict[str, str], stocktake_id: int, items: list[dict]
+) -> Response:
+    return client.post(
+        f"{API}/stocktakes/{stocktake_id}/counts", json={"items": items}, headers=headers
+    )
+
+
+def get_stocktake(client: TestClient, headers: dict[str, str], stocktake_id: int) -> dict:
+    response = client.get(f"{API}/stocktakes/{stocktake_id}", headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()
