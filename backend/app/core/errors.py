@@ -37,6 +37,8 @@ CHANNEL_NOT_FOUND = 40420
 CHANNEL_SHOP_NOT_FOUND = 40421
 CHANNEL_PRODUCT_NOT_FOUND = 40422
 ORDER_NOT_FOUND = 40423
+SHIPMENT_NOT_FOUND = 40440
+SHIPMENT_ITEM_NOT_FOUND = 40441
 
 # -------------------------------------------------------------- conflict (409xx)
 SPU_CODE_DUPLICATE = 40901
@@ -56,6 +58,15 @@ ORDER_STATUS_INVALID_TRANSITION = 40912
 CHANNEL_CODE_DUPLICATE = 40916
 CHANNEL_SHOP_CODE_DUPLICATE = 40917
 CHANNEL_PRODUCT_DUPLICATE = 40918
+# ------------------------------------------------------------ shipping (409xx)
+SHIPMENT_INVALID_TRANSITION = 40930
+SHIPMENT_ALREADY_EXISTS = 40931
+PICK_WRONG_SKU = 40932
+PICK_QUANTITY_EXCEEDS = 40933
+PICK_INCOMPLETE = 40934
+SHIPMENT_NOT_PACKED = 40935
+OUTBOUND_STOCK_MISMATCH = 40936
+ORDER_NOT_RESERVED = 40937
 
 # ------------------------------------------------------------ bad request (400xx)
 INVENTORY_ADJUST_ZERO_DELTA = 40010
@@ -66,6 +77,8 @@ CHANNEL_MAPPING_NOT_FOUND = 40020
 IMPORT_ROW_LIMIT_EXCEEDED = 40021
 IMPORT_EMPTY = 40022
 ORDER_NO_ITEMS = 40023
+SHIPMENT_NO_ITEMS = 40030
+BARCODE_REQUIRED = 40031
 
 # ----------------------------------------------------------- unprocessable (422xx)
 IMPORT_PARSE_ERROR = 42210
@@ -87,6 +100,8 @@ DEFAULT_MESSAGES = {
     CHANNEL_SHOP_NOT_FOUND: "渠道店铺不存在",
     CHANNEL_PRODUCT_NOT_FOUND: "渠道商品映射不存在",
     ORDER_NOT_FOUND: "订单不存在",
+    SHIPMENT_NOT_FOUND: "发货单不存在",
+    SHIPMENT_ITEM_NOT_FOUND: "发货单里没有这个商品行",
     SPU_CODE_DUPLICATE: "商品编码已存在",
     SKU_CODE_DUPLICATE: "SKU 编码已存在",
     BARCODE_DUPLICATE: "条码已被占用",
@@ -103,6 +118,14 @@ DEFAULT_MESSAGES = {
     CHANNEL_CODE_DUPLICATE: "渠道编码已存在",
     CHANNEL_SHOP_CODE_DUPLICATE: "该渠道下的店铺编码已存在",
     CHANNEL_PRODUCT_DUPLICATE: "该渠道商品编码已映射到其他 SKU",
+    SHIPMENT_INVALID_TRANSITION: "发货单当前状态不允许该操作",
+    SHIPMENT_ALREADY_EXISTS: "该订单已有进行中的发货单",
+    PICK_WRONG_SKU: "扫到的商品与拣货单不符，已拦截",
+    PICK_QUANTITY_EXCEEDS: "已拣数量超过应拣数量",
+    PICK_INCOMPLETE: "还有商品未拣完，不能进入下一步",
+    SHIPMENT_NOT_PACKED: "发货单尚未复核打包，不能出库",
+    OUTBOUND_STOCK_MISMATCH: "出库时库存不足或占用数不符，请检查库存流水",
+    ORDER_NOT_RESERVED: "只有已占用库存的订单才能生成发货单",
     INVENTORY_ADJUST_ZERO_DELTA: "调整数量不能为 0",
     BUNDLE_CANNOT_NEST: "组合商品不能嵌套其他组合商品",
     SKU_STATUS_INVALID: "SKU 状态不允许该操作",
@@ -111,6 +134,8 @@ DEFAULT_MESSAGES = {
     IMPORT_ROW_LIMIT_EXCEEDED: "导入行数超过上限",
     IMPORT_EMPTY: "导入内容为空",
     ORDER_NO_ITEMS: "订单没有任何商品行",
+    SHIPMENT_NO_ITEMS: "发货单没有任何商品行",
+    BARCODE_REQUIRED: "该仓库要求扫码拣货，请提供条码",
 }
 
 

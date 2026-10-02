@@ -78,6 +78,17 @@ class Settings(BaseSettings):
     # your platform exports unpaid carts too.
     ORDER_IMPORT_ASSUME_PAID: bool = True
 
+    # ----------------------------------------------------------- shipping (M3)
+    SHIPMENT_CODE_PREFIX: str = "SHP"
+    # When true, an item can only be picked by scanning its barcode.  Turn off
+    # for warehouses that tick items off on paper instead.
+    PICK_REQUIRE_BARCODE: bool = True
+    # Allow shipping an order whose pick list is not fully picked.  Off by
+    # default: a short pick must be fixed or the order stays blocked.
+    SHIPMENT_ALLOW_PARTIAL_PICK: bool = False
+    # 拣货单里没有维护库位的 SKU 的排序值，越往后越晚拣
+    PICK_UNASSIGNED_LOCATION_ORDER: str = "zzzz"
+
     # ----------------------------------------------------------------- logging
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = False

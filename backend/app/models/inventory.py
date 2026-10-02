@@ -64,11 +64,17 @@ class InventoryStock(Base, TimestampMixin):
     defective_qty: Mapped[int] = mapped_column(Integer, default=0, nullable=False)   # 次品
     repair_qty: Mapped[int] = mapped_column(Integer, default=0, nullable=False)      # 维修
 
+    # 默认拣货库位（M3）。拣货单按它排序，让拣货员少走回头路。
+    default_location_id: Mapped[int | None] = mapped_column(
+        ForeignKey("warehouse_locations.id", ondelete="SET NULL"), default=None, nullable=True
+    )
+
     # Optimistic-lock version, bumped on every write.
     version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     sku: Mapped[Sku] = relationship(lazy="selectin")
     warehouse: Mapped[Warehouse] = relationship(lazy="selectin")
+    default_location: Mapped[WarehouseLocation | None] = relationship(lazy="selectin")
 
     @property
     def available_qty(self) -> int:

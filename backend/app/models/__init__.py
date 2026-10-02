@@ -33,6 +33,14 @@ from app.models.product import (
     SpuType,
 )
 from app.models.role import Permission, Role, role_permissions, user_roles
+from app.models.shipment import (
+    PickRecord,
+    PickResult,
+    Shipment,
+    ShipmentItem,
+    ShipmentItemStatus,
+    ShipmentStatus,
+)
 from app.models.user import RefreshToken, User, UserStatus
 from app.models.warehouse import Warehouse, WarehouseLocation, WarehouseType
 
@@ -53,10 +61,16 @@ __all__ = [
     "OrderStatus",
     "OrderSyncLog",
     "Permission",
+    "PickRecord",
+    "PickResult",
     "RefreshToken",
     "Role",
     "SalesOrder",
     "SalesOrderItem",
+    "Shipment",
+    "ShipmentItem",
+    "ShipmentItemStatus",
+    "ShipmentStatus",
     "Sku",
     "SkuBarcode",
     "SkuStatus",

@@ -28,8 +28,20 @@ class InventoryStockRead(BaseModel):
     repair_qty: int
     # Derived server-side so every client shows the same number.
     available_qty: int
+    # 默认拣货库位（M3）：拣货单按它排序。
+    default_location_id: int | None = None
+    default_location_code: str = ""
     version: int
     updated_at: dt.datetime | None = None
+
+
+class StockLocationUpdate(BaseModel):
+    """Assign the standing pick location for one SKU in one warehouse."""
+
+    sku_id: int
+    warehouse_id: int
+    # ``None`` clears the assignment.
+    location_id: int | None = None
 
 
 class InventoryAdjustRequest(BaseModel):
