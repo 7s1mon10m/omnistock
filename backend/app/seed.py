@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters.base import ParsedImport
 from app.core.config import settings
+from app.core.errors import BusinessError
 from app.core.security import hash_password
 from app.db import SessionLocal, init_db
 from app.models.channel import ChannelPlatform
@@ -23,7 +24,9 @@ from app.models.warehouse import WarehouseType
 from app.repositories import (
     channel_repo,
     inventory_repo,
+    order_repo,
     product_repo,
+    shipment_repo,
     user_repo,
     warehouse_repo,
 )
@@ -39,6 +42,7 @@ from app.services import (
     order_import_service,
     permission_service,
     product_service,
+    shipment_service,
     warehouse_service,
 )
 
@@ -103,6 +107,19 @@ MAPPINGS = [
     ("SHOP", "SHOP-TS-001", "TSHIRT-WHITE-L", "Cotton Tee / White / L"),
     ("SHOP", "SHOP-SET-001", "GIFT-SET-01", "Hair Care Gift Set"),
 ]
+
+#: 总仓里每个 SKU 的固定拣货库位（M3）。拣货单按它排序，决定走货路线。
+PICK_LOCATIONS = {
+    "TSHIRT-WHITE-L": "A-01",
+    "TSHIRT-WHITE-M": "A-01",
+    "TSHIRT-BLACK-L": "A-02",
+    "SHAMPOO-500": "B-01",
+    "CONDITIONER-500": "B-01",
+    "GIFT-SET-01": "C-01",
+}
+
+#: 演示用的拣货单来源订单（必须是一笔已占用库存的订单）。
+DEMO_SHIPMENT_ORDER_NO = "TB202610020001"
 
 # Demo orders so the console is not empty on first run.
 # (channel, shop, order no, [(external code, qty, unit price cents)], buyer)
@@ -340,6 +357,46 @@ def _ensure_demo_orders(session: Session) -> dict[str, int] | None:
     }
 
 
+def _assign_pick_locations(session: Session, sku_ids: dict[str, int], warehouse_ids: dict[str, int]) -> int:
+    """Give every demo SKU a standing bin, which is what makes pick lists walkable."""
+    main = warehouse_ids["WH-MAIN"]
+    assigned = 0
+    for sku_code, location_code in PICK_LOCATIONS.items():
+        sku_id = sku_ids.get(sku_code)
+        if sku_id is None:
+            continue
+        location = warehouse_repo.get_location_by_code(session, main, location_code)
+        if location is None:
+            continue
+        stock = inventory_repo.get_stock(session, sku_id, main)
+        if stock is None or stock.default_location_id == location.id:
+            continue
+        stock.default_location_id = location.id
+        assigned += 1
+    session.commit()
+    return assigned
+
+
+def _ensure_demo_shipment(session: Session) -> str | None:
+    """Open a pick list for one demo order so the workbench is not empty."""
+    channel = channel_repo.get_channel_by_code(session, "TB")
+    if channel is None:
+        return None
+    order = order_repo.get_order_by_channel_no(session, channel.id, DEMO_SHIPMENT_ORDER_NO)
+    if order is None:
+        return None
+
+    existing = shipment_repo.get_active_by_order(session, order.id)
+    if existing is not None:
+        return existing.shipment_no
+
+    try:
+        shipment = shipment_service.create_shipment(session, order, remark="演示：待拣货")
+    except BusinessError:
+        return None
+    return shipment.shipment_no
+
+
 def main() -> None:
     init_db()
     session = SessionLocal()
@@ -355,17 +412,22 @@ def main() -> None:
         _ensure_channels(session)
         mapping_count = _ensure_mappings(session, sku_ids)
         order_stats = _ensure_demo_orders(session)
+        location_count = _assign_pick_locations(session, sku_ids, warehouse_ids)
+        shipment_no = _ensure_demo_shipment(session)
 
         print("种子数据已写入：")
         print(
             f"  仓库 {len(WAREHOUSES)} 个 · SPU {len(SPUS)} 个 · SKU {len(sku_ids)} 个 · "
             f"渠道 {len(CHANNELS)} 个 · 渠道商品映射 {mapping_count} 条"
         )
+        print(f"  已分配拣货库位 {location_count} 个 SKU（总仓）")
         if order_stats:
             print(
                 f"  演示订单 {order_stats['created']} 笔"
                 f"（已占用 {order_stats['reserved']} · 异常 {order_stats['exception']}）"
             )
+        if shipment_no:
+            print(f"  演示拣货单 {shipment_no}（状态：待拣货）")
         print(f"  数据库 {settings.DATABASE_URL}")
         print("  演示账号（仅本地使用）：")
         for username, password, role, _name in DEMO_USERS:
