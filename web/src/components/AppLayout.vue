@@ -1,0 +1,89 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
+
+const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
+
+const MENU_PREFIXES = ['/products', '/skus', '/inventory', '/bundles', '/warehouses']
+
+const activeMenu = computed(() => {
+  for (const prefix of MENU_PREFIXES) {
+    if (route.path.startsWith(prefix)) {
+      // /skus/:id belongs to the product section in the menu.
+      return prefix === '/skus' ? '/products' : prefix
+    }
+  }
+  return '/products'
+})
+
+const roleText = computed(() => auth.roles.join(' / ') || '无角色')
+
+async function onLogout() {
+  await ElMessageBox.confirm('确认退出登录？', '提示', { type: 'warning' })
+  await auth.logout()
+  ElMessage.success('已退出')
+  router.push({ name: 'login' })
+}
+</script>
+
+<template>
+  <el-container style="height: 100%">
+    <el-header class="header">
+      <div class="brand">OmniStock · 多渠道电商库存与采购协同平台</div>
+      <div class="account">
+        <span>{{ auth.displayName }}</span>
+        <el-tag size="small" type="info">{{ roleText }}</el-tag>
+        <el-button link type="primary" @click="onLogout">退出</el-button>
+      </div>
+    </el-header>
+    <el-container>
+      <el-aside width="200px" class="aside">
+        <el-menu :default-active="activeMenu" router>
+          <el-menu-item index="/products">商品管理</el-menu-item>
+          <el-menu-item index="/inventory">库存总览</el-menu-item>
+          <el-menu-item index="/bundles">组合商品</el-menu-item>
+          <el-menu-item index="/warehouses">仓库与库位</el-menu-item>
+        </el-menu>
+        <div class="milestone">M1 · 商品与库存基础</div>
+      </el-aside>
+      <el-main>
+        <slot />
+      </el-main>
+    </el-container>
+  </el-container>
+</template>
+
+<style scoped>
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #ffffff;
+  border-bottom: 1px solid #e4e7ed;
+}
+.brand {
+  font-size: 16px;
+  font-weight: 600;
+}
+.account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.aside {
+  background: #ffffff;
+  border-right: 1px solid #e4e7ed;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.milestone {
+  padding: 12px 16px;
+  font-size: 12px;
+  color: #909399;
+}
+</style>
