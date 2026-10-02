@@ -199,3 +199,220 @@ export const WAREHOUSE_TYPE_LABELS: Record<WarehouseType, string> = {
   return: '退货仓',
   other: '其他',
 }
+
+// -------------------------------------------------------- channels & orders
+export type ChannelPlatform = 'taobao' | 'douyin' | 'shopify' | 'jd' | 'pdd' | 'other'
+
+export const CHANNEL_PLATFORM_LABELS: Record<ChannelPlatform, string> = {
+  taobao: '淘宝',
+  douyin: '抖音',
+  shopify: 'Shopify',
+  jd: '京东',
+  pdd: '拼多多',
+  other: '其他',
+}
+
+export interface Channel {
+  id: number
+  code: string
+  name: string
+  platform: ChannelPlatform
+  is_active: boolean
+  remark: string
+  shop_count: number
+  product_count: number
+  created_at: string | null
+}
+
+export interface ChannelShop {
+  id: number
+  channel_id: number
+  code: string
+  name: string
+  is_active: boolean
+  remark: string
+}
+
+export interface ChannelProduct {
+  id: number
+  channel_id: number
+  channel_code: string
+  channel_name: string
+  shop_id: number | null
+  shop_code: string
+  channel_product_code: string
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  channel_title: string
+  is_active: boolean
+  remark: string
+  created_at: string | null
+}
+
+export type OrderStatus =
+  | 'pending_payment'
+  | 'pending_fulfillment'
+  | 'reserved'
+  | 'picking'
+  | 'shipped'
+  | 'completed'
+  | 'cancelled'
+  | 'exception'
+
+export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  pending_payment: '待支付',
+  pending_fulfillment: '待配货',
+  reserved: '已占用库存',
+  picking: '拣货中',
+  shipped: '已发货',
+  completed: '已完成',
+  cancelled: '已取消',
+  exception: '异常订单',
+}
+
+export const ORDER_STATUS_TAG: Record<OrderStatus, string> = {
+  pending_payment: 'info',
+  pending_fulfillment: 'warning',
+  reserved: 'success',
+  picking: 'warning',
+  shipped: 'success',
+  completed: 'success',
+  cancelled: 'info',
+  exception: 'danger',
+}
+
+export type OrderSource = 'import_csv' | 'import_json' | 'adapter' | 'manual'
+
+export interface OrderItem {
+  id: number
+  line_no: number
+  channel_product_code: string
+  sku_id: number
+  sku_code: string
+  sku_name: string
+  quantity: number
+  unit_price_cents: number
+  is_bundle: boolean
+}
+
+export interface ReservationLine {
+  sku_id: number
+  sku_code: string
+  warehouse_id: number
+  warehouse_code: string
+  quantity: number
+}
+
+export interface OrderSummary {
+  id: number
+  order_no: string
+  channel_code: string
+  shop_code: string
+  channel_order_no: string
+  status: OrderStatus
+  buyer_nick: string
+  total_amount_cents: number
+  total_quantity: number
+  item_count: number
+  is_bundle: boolean
+  source: OrderSource
+  created_at: string | null
+}
+
+export interface OrderDetail extends OrderSummary {
+  channel_id: number
+  channel_name: string
+  shop_id: number | null
+  warehouse_id: number | null
+  warehouse_code: string
+  paid_at: string | null
+  remark: string
+  items: OrderItem[]
+  reservations: ReservationLine[]
+  open_exceptions: number
+}
+
+export type ExceptionType = 'stock_shortage' | 'mapping_missing' | 'other'
+export type ExceptionStatus = 'open' | 'resolved' | 'ignored'
+
+export interface OrderException {
+  id: number
+  order_id: number
+  order_no: string
+  channel_order_no: string
+  sku_id: number | null
+  sku_code: string
+  sku_name: string
+  warehouse_code: string
+  type: ExceptionType
+  status: ExceptionStatus
+  required_qty: number
+  available_qty: number
+  shortage_qty: number
+  message: string
+  created_at: string | null
+}
+
+export interface OrderActionResult {
+  order: OrderDetail
+  reserved: ReservationLine[]
+  released: ReservationLine[]
+  exceptions: OrderException[]
+  message: string
+}
+
+export interface ImportErrorRow {
+  row: number
+  code: number
+  message: string
+  channel_order_no: string
+}
+
+export interface ImportResult {
+  batch_id: number
+  source: OrderSource
+  total_rows: number
+  created_orders: number
+  duplicate_orders: number
+  failed_rows: number
+  reserved_orders: number
+  exception_orders: number
+  errors: ImportErrorRow[]
+}
+
+export interface ImportBatch {
+  id: number
+  source: OrderSource
+  filename: string
+  total_rows: number
+  created_orders: number
+  duplicate_orders: number
+  failed_rows: number
+  reserved_orders: number
+  exception_orders: number
+  created_at: string | null
+}
+
+export interface SyncLog {
+  id: number
+  channel_id: number
+  channel_code: string
+  shop_id: number | null
+  channel_order_no: string
+  order_id: number | null
+  batch_id: number | null
+  result: 'created' | 'duplicate' | 'failed'
+  message: string
+  created_at: string | null
+}
+
+export const SYNC_RESULT_LABELS: Record<string, string> = {
+  created: '已创建',
+  duplicate: '重复同步',
+  failed: '失败',
+}
+
+export function yuan(cents: number): string {
+  return `¥${(cents / 100).toFixed(2)}`
+}

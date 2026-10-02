@@ -8,7 +8,19 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
-const MENU_PREFIXES = ['/products', '/skus', '/inventory', '/bundles', '/warehouses']
+// Longest prefixes first so /orders/:id highlights 订单管理 rather than 订单导入.
+const MENU_PREFIXES = [
+  '/order-exceptions',
+  '/order-import',
+  '/channel-products',
+  '/channels',
+  '/orders',
+  '/skus',
+  '/products',
+  '/inventory',
+  '/bundles',
+  '/warehouses',
+]
 
 const activeMenu = computed(() => {
   for (const prefix of MENU_PREFIXES) {
@@ -17,7 +29,7 @@ const activeMenu = computed(() => {
       return prefix === '/skus' ? '/products' : prefix
     }
   }
-  return '/products'
+  return '/orders'
 })
 
 const roleText = computed(() => auth.roles.join(' / ') || '无角色')
@@ -43,12 +55,20 @@ async function onLogout() {
     <el-container>
       <el-aside width="200px" class="aside">
         <el-menu :default-active="activeMenu" router>
+          <el-menu-item index="/orders">订单管理</el-menu-item>
+          <el-menu-item index="/order-import">订单导入</el-menu-item>
+          <el-menu-item index="/order-exceptions">异常订单</el-menu-item>
           <el-menu-item index="/products">商品管理</el-menu-item>
           <el-menu-item index="/inventory">库存总览</el-menu-item>
           <el-menu-item index="/bundles">组合商品</el-menu-item>
           <el-menu-item index="/warehouses">仓库与库位</el-menu-item>
+          <el-sub-menu index="channel">
+            <template #title>渠道配置</template>
+            <el-menu-item index="/channels">渠道与店铺</el-menu-item>
+            <el-menu-item index="/channel-products">渠道商品映射</el-menu-item>
+          </el-sub-menu>
         </el-menu>
-        <div class="milestone">M1 · 商品与库存基础</div>
+        <div class="milestone">M2 · 电商订单处理</div>
       </el-aside>
       <el-main>
         <slot />

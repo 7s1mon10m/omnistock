@@ -10,7 +10,38 @@ const router = createRouter({
       component: () => import('@/views/Login.vue'),
       meta: { public: true },
     },
-    { path: '/', redirect: '/products' },
+    { path: '/', redirect: '/orders' },
+    {
+      path: '/orders',
+      name: 'orders',
+      component: () => import('@/views/OrderList.vue'),
+    },
+    {
+      path: '/orders/:id',
+      name: 'order-detail',
+      component: () => import('@/views/OrderDetail.vue'),
+      props: true,
+    },
+    {
+      path: '/order-import',
+      name: 'order-import',
+      component: () => import('@/views/OrderImport.vue'),
+    },
+    {
+      path: '/order-exceptions',
+      name: 'order-exceptions',
+      component: () => import('@/views/OrderExceptions.vue'),
+    },
+    {
+      path: '/channels',
+      name: 'channels',
+      component: () => import('@/views/ChannelConfig.vue'),
+    },
+    {
+      path: '/channel-products',
+      name: 'channel-products',
+      component: () => import('@/views/ChannelProducts.vue'),
+    },
     {
       path: '/products',
       name: 'products',
@@ -53,7 +84,7 @@ router.beforeEach(async (to) => {
   }
   const required = to.meta.roles as string[] | undefined
   if (required && !required.some((role) => auth.hasRole(role))) {
-    return { name: 'products' }
+    return { name: 'orders' }
   }
   return true
 })
