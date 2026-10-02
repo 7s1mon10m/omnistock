@@ -454,3 +454,123 @@ def first_order_id(client: TestClient, headers: dict[str, str], channel_order_no
     ).json()
     assert listed["total"] == 1, listed
     return listed["items"][0]["id"]
+
+
+# ------------------------------------------------------ M4: purchasing & receipts
+def create_supplier(
+    client: TestClient, headers: dict[str, str], name: str = "测试供应商", **extra
+) -> dict:
+    response = client.post(
+        f"{API}/suppliers", json={"name": name, **extra}, headers=headers
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def create_purchase_order(
+    client: TestClient, headers: dict[str, str], supplier_id: int, warehouse_id: int, items: list[dict], **extra
+) -> Response:
+    return client.post(
+        f"{API}/purchase-orders",
+        json={"supplier_id": supplier_id, "warehouse_id": warehouse_id, "items": items, **extra},
+        headers=headers,
+    )
+
+
+def submit_purchase_order(client: TestClient, headers: dict[str, str], po_id: int) -> Response:
+    return client.post(f"{API}/purchase-orders/{po_id}/submit", headers=headers)
+
+
+def receive(
+    client: TestClient, headers: dict[str, str], po_id: int, items: list[dict], **extra
+) -> Response:
+    """Register one goods receipt. ``items`` are ``{order_item_id, quantity, defective_qty}``."""
+    return client.post(
+        f"{API}/purchase-orders/{po_id}/receipts", json={"items": items, **extra}, headers=headers
+    )
+
+
+def get_purchase_order(client: TestClient, headers: dict[str, str], po_id: int) -> dict:
+    response = client.get(f"{API}/purchase-orders/{po_id}", headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+# ---------------------------------------------------------- M5: stock transfers
+def create_transfer(
+    client: TestClient,
+    headers: dict[str, str],
+    from_warehouse_id: int,
+    to_warehouse_id: int,
+    items: list[dict],
+    **extra,
+) -> Response:
+    return client.post(
+        f"{API}/transfers",
+        json={
+            "from_warehouse_id": from_warehouse_id,
+            "to_warehouse_id": to_warehouse_id,
+            "items": items,
+            **extra,
+        },
+        headers=headers,
+    )
+
+
+def approve_transfer(client: TestClient, headers: dict[str, str], transfer_id: int) -> Response:
+    return client.post(f"{API}/transfers/{transfer_id}/approve", headers=headers)
+
+
+def ship_transfer(
+    client: TestClient, headers: dict[str, str], transfer_id: int, items: list[dict] | None = None
+) -> Response:
+    return client.post(
+        f"{API}/transfers/{transfer_id}/ship", json={"items": items}, headers=headers
+    )
+
+
+def receive_transfer(
+    client: TestClient, headers: dict[str, str], transfer_id: int, items: list[dict] | None = None
+) -> Response:
+    return client.post(
+        f"{API}/transfers/{transfer_id}/receive", json={"items": items}, headers=headers
+    )
+
+
+def get_transfer(client: TestClient, headers: dict[str, str], transfer_id: int) -> dict:
+    response = client.get(f"{API}/transfers/{transfer_id}", headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def inventory_row(
+    client: TestClient, headers: dict[str, str], sku_id: int, warehouse_id: int
+) -> dict:
+    rows = client.get(f"{API}/inventory?page_size=200", headers=headers).json()["items"]
+    for row in rows:
+        if row["sku_id"] == sku_id and row["warehouse_id"] == warehouse_id:
+            return row
+    raise AssertionError(f"no inventory row for sku={sku_id} wh={warehouse_id}")
+
+
+#: 一个仓库还没被这个 SKU 触及过时，库存表里是**没有那一行**的。
+#: 为 0 的语义和"没有行"的语义在这里是一样的，测试里用一个零值代替。
+ZERO_STOCK = {
+    "on_hand_qty": 0,
+    "reserved_qty": 0,
+    "in_transit_qty": 0,
+    "safety_qty": 0,
+    "defective_qty": 0,
+    "repair_qty": 0,
+    "available_qty": 0,
+}
+
+
+def inventory_row_or_zero(
+    client: TestClient, headers: dict[str, str], sku_id: int, warehouse_id: int
+) -> dict:
+    rows = client.get(f"{API}/inventory?page_size=200", headers=headers).json()["items"]
+    for row in rows:
+        if row["sku_id"] == sku_id and row["warehouse_id"] == warehouse_id:
+            return row
+    return dict(ZERO_STOCK)
