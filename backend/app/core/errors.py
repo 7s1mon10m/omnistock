@@ -33,6 +33,10 @@ SKU_NOT_FOUND = 40411
 WAREHOUSE_NOT_FOUND = 40412
 LOCATION_NOT_FOUND = 40413
 BUNDLE_NOT_FOUND = 40414
+CHANNEL_NOT_FOUND = 40420
+CHANNEL_SHOP_NOT_FOUND = 40421
+CHANNEL_PRODUCT_NOT_FOUND = 40422
+ORDER_NOT_FOUND = 40423
 
 # -------------------------------------------------------------- conflict (409xx)
 SPU_CODE_DUPLICATE = 40901
@@ -45,12 +49,26 @@ BUNDLE_COMPONENT_INVALID = 40907
 WAREHOUSE_CODE_DUPLICATE = 40908
 LOCATION_CODE_DUPLICATE = 40909
 USERNAME_DUPLICATE = 40920
+# --------------------------------------------------------------- orders (409xx)
+ORDER_DUPLICATE_SYNC = 40910
+ORDER_STOCK_SHORTAGE = 40911
+ORDER_STATUS_INVALID_TRANSITION = 40912
+CHANNEL_CODE_DUPLICATE = 40916
+CHANNEL_SHOP_CODE_DUPLICATE = 40917
+CHANNEL_PRODUCT_DUPLICATE = 40918
 
 # ------------------------------------------------------------ bad request (400xx)
 INVENTORY_ADJUST_ZERO_DELTA = 40010
 BUNDLE_CANNOT_NEST = 40011
 SKU_STATUS_INVALID = 40012
 SPU_TYPE_NOT_BUNDLE = 40013
+CHANNEL_MAPPING_NOT_FOUND = 40020
+IMPORT_ROW_LIMIT_EXCEEDED = 40021
+IMPORT_EMPTY = 40022
+ORDER_NO_ITEMS = 40023
+
+# ----------------------------------------------------------- unprocessable (422xx)
+IMPORT_PARSE_ERROR = 42210
 
 DEFAULT_MESSAGES = {
     AUTH_INVALID_CREDENTIALS: "用户名或密码不正确",
@@ -65,6 +83,10 @@ DEFAULT_MESSAGES = {
     WAREHOUSE_NOT_FOUND: "仓库不存在",
     LOCATION_NOT_FOUND: "库位不存在",
     BUNDLE_NOT_FOUND: "组合商品不存在",
+    CHANNEL_NOT_FOUND: "渠道不存在",
+    CHANNEL_SHOP_NOT_FOUND: "渠道店铺不存在",
+    CHANNEL_PRODUCT_NOT_FOUND: "渠道商品映射不存在",
+    ORDER_NOT_FOUND: "订单不存在",
     SPU_CODE_DUPLICATE: "商品编码已存在",
     SKU_CODE_DUPLICATE: "SKU 编码已存在",
     BARCODE_DUPLICATE: "条码已被占用",
@@ -75,10 +97,20 @@ DEFAULT_MESSAGES = {
     WAREHOUSE_CODE_DUPLICATE: "仓库编码已存在",
     LOCATION_CODE_DUPLICATE: "库位编码已存在",
     USERNAME_DUPLICATE: "用户名已存在",
+    ORDER_DUPLICATE_SYNC: "该渠道订单号已同步过，不会重复扣减库存",
+    ORDER_STOCK_SHORTAGE: "订单中有 SKU 可售库存不足",
+    ORDER_STATUS_INVALID_TRANSITION: "订单当前状态不允许该操作",
+    CHANNEL_CODE_DUPLICATE: "渠道编码已存在",
+    CHANNEL_SHOP_CODE_DUPLICATE: "该渠道下的店铺编码已存在",
+    CHANNEL_PRODUCT_DUPLICATE: "该渠道商品编码已映射到其他 SKU",
     INVENTORY_ADJUST_ZERO_DELTA: "调整数量不能为 0",
     BUNDLE_CANNOT_NEST: "组合商品不能嵌套其他组合商品",
     SKU_STATUS_INVALID: "SKU 状态不允许该操作",
     SPU_TYPE_NOT_BUNDLE: "该商品不是组合商品类型，请先创建 type=bundle 的商品",
+    CHANNEL_MAPPING_NOT_FOUND: "渠道商品编码尚未映射到内部 SKU",
+    IMPORT_ROW_LIMIT_EXCEEDED: "导入行数超过上限",
+    IMPORT_EMPTY: "导入内容为空",
+    ORDER_NO_ITEMS: "订单没有任何商品行",
 }
 
 
@@ -108,6 +140,18 @@ class BusinessError(Exception):
         return payload
 
 
+class ImportParseError(Exception):
+    """A whole import file could not be parsed.
+
+    Carries per-row detail so the UI can show exactly which line was wrong
+    instead of a generic "import failed".
+    """
+
+    def __init__(self, message: str, rows: list[dict[str, Any]] | None = None) -> None:
+        self.rows = rows or []
+        super().__init__(message)
+
+
 def _error_response(status: int, code: int, message: str, detail: Any = None) -> JSONResponse:
     payload: dict[str, Any] = {"code": code, "message": message}
     if detail is not None:
@@ -130,6 +174,11 @@ def register_exception_handlers(app: FastAPI) -> None:
             "请求参数校验失败",
             [{"field": ".".join(str(p) for p in e["loc"]), "msg": e["msg"]} for e in exc.errors()],
         )
+
+    @app.exception_handler(ImportParseError)
+    async def _import_parse(request: Request, exc: ImportParseError) -> JSONResponse:  # noqa: ARG001
+        # Row level detail is the whole point of an import failure report.
+        return _error_response(422, IMPORT_PARSE_ERROR, str(exc), exc.rows)
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:  # noqa: ARG001

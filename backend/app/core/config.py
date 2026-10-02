@@ -61,6 +61,23 @@ class Settings(BaseSettings):
     INVENTORY_REJECT_ZERO_DELTA: bool = True
     CURRENCY: str = "CNY"
 
+    # ------------------------------------------------- channels and orders (M2)
+    # ``exception`` refuses the whole order when any SKU is short; ``partial``
+    # reserves whatever is available and books the remainder as a shortage.
+    ORDER_SHORTAGE_STRATEGY: str = "exception"  # exception | partial
+    ORDER_SYNC_BATCH_SIZE: int = 200
+    # Reserved stock older than this is reported as a stale reservation.
+    ORDER_IDEMPOTENT_WINDOW_HOURS: int = 72
+    ORDER_CODE_PREFIX: str = "SO"
+    # Import guard rails: a small deployment should never parse a 1M row file.
+    IMPORT_MAX_ROWS: int = 5_000
+    # ``utf-8-sig`` transparently strips the BOM Excel adds when saving CSV.
+    IMPORT_ENCODING: str = "utf-8-sig"
+    # Channel exports are almost always already-paid orders, so treat a missing
+    # paid_at as "paid now" and reserve stock straight away.  Set to false if
+    # your platform exports unpaid carts too.
+    ORDER_IMPORT_ASSUME_PAID: bool = True
+
     # ----------------------------------------------------------------- logging
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = False
